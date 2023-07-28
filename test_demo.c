@@ -197,10 +197,12 @@ void num_change_str(int num, const char *unit, char *result_str)
 
 int main(void *arg)
 {
-    int num = 9999;
+    int num;
     char *unit = "hertz"; // 单位赫兹
     char strbuf[10] = {0};
     char *numbuf = NULL;
+    printf("请输入数字：");
+    scanf("%d", &num);
     num_change_str(num, unit, strbuf); // 获取到strbuf
     numbuf = str_change_num(strbuf);   // 获取到numbuf
     if (numbuf != NULL)
