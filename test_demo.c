@@ -52,13 +52,13 @@ static char name_find(const char *name)
 /**
  * @brief :输入字符串
  * @param str:输入的字符串
- * @return :NULL或者数组
+ * @return :NULL或者数组,需要手动释放数组
  */
 char *str_change_num(char *str)
 {
-    char *token;
+    char *token; // 获取单个字符串
     char data = 0;
-    int length = 0;
+    unsigned int length = 0;
     char *bytes = (char *)malloc(MAP_SIZE * sizeof(char));
 
     if (bytes == NULL)
@@ -83,6 +83,7 @@ char *str_change_num(char *str)
     }
 
     char *nums = (char *)malloc(length * sizeof(char));
+
     if (bytes == NULL)
     {
         printf("Memory allocation failed.\n");
@@ -93,15 +94,20 @@ char *str_change_num(char *str)
 
     for (int i = 0; i < length; i++)
     {
-        printf(" 0x%02x", nums[i]); // 错误打印，打印的是指针大小
+        printf(" 0x%02x", nums[i]); // 正确打印
     }
+
+    // for (int i = 0; i < sizeof(nums)/sizeof(char); i++)
+    // {
+    //     printf(" 0x%02x", nums[i]); // 错误打印，打印的是指针大小 ,sizeof(nums)/sizeof(char)获取到的是编译器的指针大小
+    // }
     printf("\n");
     return nums;
 }
 
 /**
  * @brief :数字转成字符串
- * @param num:输入的字
+ * @param num:输入的数字
  * @param unit:输入的单位
  * @param result_str:获取的字符串结果
  * @return :void
@@ -190,6 +196,7 @@ void num_change_str(int num, const char *unit, char *result_str)
             strcat(result_str, unit); // 拼接单位
         }
     }
+
     printf("%s", result_str);
     printf("\n");
     return;
