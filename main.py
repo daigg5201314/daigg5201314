@@ -1,129 +1,123 @@
 import os
 import shutil
 import tkinter as tk
-from tkinter import filedialog, messagebox
-from tkinter import ttk
+from tkinter import messagebox, ttk
+from PIL import Image, ImageTk
 
-def extract_values_from_scne(input_file_path, key):
-    extracted_values = []
-    with open(input_file_path, 'r', encoding='utf-8') as file:
-        for line in file:
-            if key in line:
-                # 提取值，假设格式为 "key": "value"
-                parts = line.split(':')
-                if len(parts) > 1:
-                    value = parts[1].strip().strip('",')
-                    extracted_values.append(value)
-                    # print(f"提取到: {key} -> {value}")  # 打印提取的值
-    return extracted_values
+def load_image(image_path):
+    try:
+        img = Image.open(image_path)
+        img = img.resize((100, 100))  # 调整图片大小
+        return ImageTk.PhotoImage(img)
+    except Exception as e:
+        print(f"加载图片失败: {image_path}, 错误: {e}")
+        return None
 
-def clean_extension(value):
-    extensions = [".tld", ".bin", ".shader", ".gz", ".script"]
-    for ext in extensions:
-        if value.endswith(ext):
-            return value[:-len(ext)]  # 去掉后缀
-    return value
+def process_files():
+    ball_replace_folder = 'ball_replace'
+    picture_folder = 'picture'
+    balls_folder = 'balls'
 
-def copy_files_with_prefix(source_folder, destination_folder, prefixes):
-    if not os.path.exists(destination_folder):
-        os.makedirs(destination_folder)
-
-    wait_copy_file = []
-    for filename in os.listdir(source_folder):
-        if any(prefix in filename for prefix in prefixes):
-            wait_copy_file.append(filename)
-
-    return wait_copy_file
-
-def clear_destination_folder(destination_folder):
-    if os.path.exists(destination_folder):  # 确保目标文件夹存在
-        for filename in os.listdir(destination_folder):
-            file_path = os.path.join(destination_folder, filename)
-            try:
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print(f"删除文件 {file_path} 时出错: {e}")
-    else:
-        print(f"目标文件夹不存在: {destination_folder}")
-
-
-def process_file():
-    input_file_path = entry.get()
-    if not input_file_path.endswith('.SCNE'):
-        messagebox.showerror("错误", "请选择一个 SCNE 文件")
+    if not os.path.exists(ball_replace_folder):
+        messagebox.showerror("错误", f"{ball_replace_folder} 文件夹不存在！")
         return
 
-    source_folder_path = os.path.dirname(os.path.abspath(input_file_path))
-    destination_folder_path = os.path.join(source_folder_path, 'scne_export')
-
-    # print(f"源文件路径: {input_file_path}")
-    # print(f"源文件夹路径: {source_folder_path}")
-
-    # 确保目标文件夹路径有效
-    if not os.path.isdir(source_folder_path):
-        messagebox.showerror("错误", "源文件夹无效！")
+    if not os.path.exists(picture_folder):
+        messagebox.showerror("错误", f"{picture_folder} 文件夹不存在！")
         return
 
-    # 清理目标文件夹
-    clear_destination_folder(destination_folder_path)
+    ball_files = sorted([f for f in os.listdir(ball_replace_folder) if f.endswith('.iff')])
+    picture_files = sorted([f for f in os.listdir(picture_folder) if f.endswith('.png')])
 
-    # 提取 "Binary" 和 "Script"
-    all_keys_and_values = []
-    binary_values = extract_values_from_scne(input_file_path, "Binary")
-    script_values = extract_values_from_scne(input_file_path, "Script")
+    ball_images = []
+    for ball_file in ball_files:
+        index = ball_file.split('.')[0]
+        matching_picture = f"{index}.png"
 
-    if not binary_values and not script_values:
-        messagebox.showwarning("警告", "在 SCNE 文件中未找到对应的关键字！")
+        if matching_picture in picture_files:
+            picture_path = os.path.join(picture_folder, matching_picture)
+            img = load_image(picture_path)
+            if img:
+                ball_images.append((ball_file, img))
+        else:
+            ball_images.append((ball_file, None))
+
+    display_images(ball_images)
+
+def display_images(ball_images):
+    for widget in frame_images.winfo_children():
+        widget.destroy()
+
+    for idx, (ball_file, img) in enumerate(ball_images):
+        frame = tk.Frame(frame_images, bd=1, relief="solid")
+        frame.grid(row=idx // 5, column=idx % 5, padx=5, pady=5, sticky="nsew")
+
+        if img:
+            img_label = tk.Label(frame, image=img)
+            img_label.image = img
+            img_label.pack()
+            img_label.bind("<Double-Button-1>", lambda event, ball_file=ball_file: replace_ball_file(ball_file))
+        else:
+            empty_img = ImageTk.PhotoImage(Image.new('RGB', (100, 100), (255, 255, 255)))
+            img_label = tk.Label(frame, image=empty_img)
+            img_label.image = empty_img
+            img_label.pack()
+
+        name_label = tk.Label(frame, text=ball_file)
+        name_label.pack()
+
+    frame_images.update_idletasks()
+    canvas.configure(scrollregion=canvas.bbox("all"))
+
+def replace_ball_file(ball_file):
+    ball_replace_folder = 'ball_replace'
+    balls_folder = 'balls'
+
+    source_path = os.path.join(ball_replace_folder, ball_file)
+    dest_path = os.path.join(balls_folder, "ball_gameplay_official_nba_official.iff")
+
+    if not os.path.exists(source_path):
+        messagebox.showerror("错误", f"{source_path} 不存在！")
         return
 
-    all_keys_and_values.extend(binary_values)
-    all_keys_and_values.extend(script_values)
-
-    # 去掉后缀并生成新字符串列表
-    stripped_strings = [clean_extension(value) for value in all_keys_and_values]
-
-    wait_copy_files = copy_files_with_prefix(source_folder_path, destination_folder_path, stripped_strings)
-    progress['maximum'] = len(wait_copy_files)
-
-    for idx, wait_copyfile_name in enumerate(wait_copy_files):
-        source_file = os.path.join(source_folder_path, wait_copyfile_name)
-        destination_file = os.path.join(destination_folder_path, wait_copyfile_name)
-        shutil.copy(source_file, destination_file)
-        progress['value'] = idx + 1
-        copied_count_label.config(text=f"已复制文件: {idx + 1}/{len(wait_copy_files)}")
-        root.update_idletasks()
-
-    messagebox.showinfo("完成", "处理完成！")
-
-    # 清空输入框
-    entry.delete(0, tk.END)
+    try:
+        shutil.copy(source_path, dest_path)
+        messagebox.showinfo("成功", f"成功替换 {dest_path}")
+    except Exception as e:
+        messagebox.showerror("错误", f"复制文件失败: {e}")
 
 # 创建主窗口
 root = tk.Tk()
-root.title("SCNE文件处理器 V1.0")
+root.title("篮球替换工具")
 
-# 创建输入框和按钮
-label = tk.Label(root, text="选择 SCNE 文件:")
-label.pack(pady=10)
+# 创建Canvas和Scrollbar
+canvas = tk.Canvas(root)
+canvas.pack(side="left", fill="both", expand=True)
 
-entry = tk.Entry(root, width=50)
-entry.pack(padx=10)
+scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
+scrollbar.pack(side="right", fill="y")
 
-button_browse = tk.Button(root, text="浏览", command=lambda: entry.delete(0, tk.END) or entry.insert(0, filedialog.askopenfilename(filetypes=[("SCNE Files", "*.scne")])))
-button_browse.pack(pady=5)
+canvas.configure(yscrollcommand=scrollbar.set)
 
-button_process = tk.Button(root, text="处理文件", command=process_file)
-button_process.pack(pady=20)
+frame_images = ttk.Frame(canvas)
+canvas.create_window((0, 0), window=frame_images, anchor="nw")
 
-# 添加进度条和文件数量标签
-progress = ttk.Progressbar(root, orient="horizontal", length=400, mode="determinate")
-progress.pack(pady=10)
+def update_scroll_region(event):
+    canvas.configure(scrollregion=canvas.bbox("all"))
 
-copied_count_label = tk.Label(root, text="已复制文件: 0/0")
-copied_count_label.pack(pady=5)
+frame_images.bind("<Configure>", update_scroll_region)
 
-# 启动主循环
+# 配置每列的扩展性
+for i in range(5):
+    frame_images.grid_columnconfigure(i, weight=1)
+
+# 在应用启动时自动加载图片
+process_files()
+
+# 鼠标滚轮滚动
+def on_mousewheel(event):
+    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+canvas.bind_all("<MouseWheel>", on_mousewheel)
+
 root.mainloop()
