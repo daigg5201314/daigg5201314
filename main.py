@@ -1,8 +1,15 @@
 import os
 import shutil
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, filedialog, ttk
 from PIL import Image, ImageTk
+import sys
+
+# 检查资源路径（处理打包时的资源路径问题）
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 def load_image(image_path):
     try:
@@ -14,10 +21,11 @@ def load_image(image_path):
         return None
 
 def process_files():
-    ball_replace_folder = 'ball_replace'
-    picture_folder = 'picture'
-    balls_folder = 'balls'
+    # 使用resource_path获取打包后的路径
+    ball_replace_folder = resource_path('ball_replace')
+    picture_folder = resource_path('picture')
 
+    # 检查文件夹是否存在
     if not os.path.exists(ball_replace_folder):
         messagebox.showerror("错误", f"{ball_replace_folder} 文件夹不存在！")
         return
@@ -45,9 +53,11 @@ def process_files():
     display_images(ball_images)
 
 def display_images(ball_images):
+    # 清除现有图片
     for widget in frame_images.winfo_children():
         widget.destroy()
 
+    # 动态显示图片
     for idx, (ball_file, img) in enumerate(ball_images):
         frame = tk.Frame(frame_images, bd=1, relief="solid")
         frame.grid(row=idx // 5, column=idx % 5, padx=5, pady=5, sticky="nsew")
@@ -70,9 +80,14 @@ def display_images(ball_images):
     canvas.configure(scrollregion=canvas.bbox("all"))
 
 def replace_ball_file(ball_file):
-    ball_replace_folder = 'ball_replace'
-    balls_folder = 'balls'
-
+    ball_replace_folder = resource_path('ball_replace')
+    
+    # 获取用户选择的替换路径
+    if not hasattr(root, "balls_folder") or not root.balls_folder:
+        messagebox.showerror("错误", "请先选择一个替换路径")
+        return
+    
+    balls_folder = root.balls_folder
     source_path = os.path.join(ball_replace_folder, ball_file)
     dest_path = os.path.join(balls_folder, "ball_gameplay_official_nba_official.iff")
 
@@ -85,6 +100,14 @@ def replace_ball_file(ball_file):
         messagebox.showinfo("成功", f"成功替换 {dest_path}")
     except Exception as e:
         messagebox.showerror("错误", f"复制文件失败: {e}")
+
+# 选择替换路径
+def select_balls_folder():
+    selected_folder = filedialog.askdirectory(title="选择替换篮球文件的保存路径")
+    if selected_folder:
+        root.balls_folder = selected_folder
+        # 成功选择路径后直接进入匹配界面
+        process_files()
 
 # 创建主窗口
 root = tk.Tk()
@@ -111,8 +134,9 @@ frame_images.bind("<Configure>", update_scroll_region)
 for i in range(5):
     frame_images.grid_columnconfigure(i, weight=1)
 
-# 在应用启动时自动加载图片
-process_files()
+# 添加“选择路径”按钮
+select_button = tk.Button(root, text="选择篮球替换保存路径", command=select_balls_folder)
+select_button.pack()
 
 # 鼠标滚轮滚动
 def on_mousewheel(event):
