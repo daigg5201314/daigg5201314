@@ -21,11 +21,9 @@ def load_image(image_path):
         return None
 
 def process_files():
-    # 使用resource_path获取打包后的路径
     ball_replace_folder = resource_path('ball_replace')
     picture_folder = resource_path('picture')
 
-    # 检查文件夹是否存在
     if not os.path.exists(ball_replace_folder):
         messagebox.showerror("错误", f"{ball_replace_folder} 文件夹不存在！")
         return
@@ -53,27 +51,25 @@ def process_files():
     display_images(ball_images)
 
 def display_images(ball_images):
-    # 清除现有图片
     for widget in frame_images.winfo_children():
         widget.destroy()
 
-    # 动态显示图片
     for idx, (ball_file, img) in enumerate(ball_images):
-        frame = tk.Frame(frame_images, bd=1, relief="solid")
+        frame = ttk.Frame(frame_images, padding=5)
         frame.grid(row=idx // 5, column=idx % 5, padx=5, pady=5, sticky="nsew")
 
         if img:
-            img_label = tk.Label(frame, image=img)
+            img_label = tk.Label(frame, image=img, bg="white", relief="solid", borderwidth=1)
             img_label.image = img
             img_label.pack()
             img_label.bind("<Double-Button-1>", lambda event, ball_file=ball_file: replace_ball_file(ball_file))
         else:
             empty_img = ImageTk.PhotoImage(Image.new('RGB', (100, 100), (255, 255, 255)))
-            img_label = tk.Label(frame, image=empty_img)
+            img_label = tk.Label(frame, image=empty_img, bg="white", relief="solid", borderwidth=1)
             img_label.image = empty_img
             img_label.pack()
 
-        name_label = tk.Label(frame, text=ball_file)
+        name_label = tk.Label(frame, text=ball_file, bg="white")
         name_label.pack()
 
     frame_images.update_idletasks()
@@ -82,7 +78,6 @@ def display_images(ball_images):
 def replace_ball_file(ball_file):
     ball_replace_folder = resource_path('ball_replace')
     
-    # 获取用户选择的替换路径
     if not hasattr(root, "balls_folder") or not root.balls_folder:
         messagebox.showerror("错误", "请先选择一个替换路径")
         return
@@ -101,47 +96,46 @@ def replace_ball_file(ball_file):
     except Exception as e:
         messagebox.showerror("错误", f"复制文件失败: {e}")
 
-# 选择替换路径
 def select_balls_folder():
     selected_folder = filedialog.askdirectory(title="选择替换篮球文件的保存路径")
     if selected_folder:
         root.balls_folder = selected_folder
-        # 成功选择路径后直接进入匹配界面
         process_files()
 
 # 创建主窗口
 root = tk.Tk()
-root.title("篮球替换工具")
+root.title("篮球替换工具 V0.1 Beta")
+root.geometry("600x480")
+root.configure(bg="#f0f0f0")  # 设置窗口背景色
 
-# 创建Canvas和Scrollbar
-canvas = tk.Canvas(root)
-canvas.pack(side="left", fill="both", expand=True)
+canvas = tk.Canvas(root, bg="#f0f0f0")
+canvas.pack(side="top", fill="both", expand=True)
 
 scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
 scrollbar.pack(side="right", fill="y")
 
 canvas.configure(yscrollcommand=scrollbar.set)
 
-frame_images = ttk.Frame(canvas)
+frame_images = ttk.Frame(canvas, style="TFrame")
 canvas.create_window((0, 0), window=frame_images, anchor="nw")
 
-def update_scroll_region(event):
-    canvas.configure(scrollregion=canvas.bbox("all"))
+frame_images.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
 
-frame_images.bind("<Configure>", update_scroll_region)
-
-# 配置每列的扩展性
 for i in range(5):
     frame_images.grid_columnconfigure(i, weight=1)
 
-# 添加“选择路径”按钮
-select_button = tk.Button(root, text="选择篮球替换保存路径", command=select_balls_folder)
-select_button.pack()
+button_frame = tk.Frame(root, bg="#f0f0f0")
+button_frame.pack(side="bottom", fill="x", pady=10)
 
-# 鼠标滚轮滚动
+select_button = ttk.Button(button_frame, text="选择篮球替换路径", command=select_balls_folder)
+select_button.pack(side="bottom", anchor="center")
+
 def on_mousewheel(event):
     canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
 canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+# 程序启动后直接进入匹配页面
+process_files()
 
 root.mainloop()
