@@ -104,7 +104,7 @@ def select_balls_folder():
 
 # 创建主窗口
 root = tk.Tk()
-root.title("篮球替换工具 V0.1 Beta")
+root.title("篮球替换工具 V0.3 Beta")
 root.geometry("600x480")
 root.configure(bg="#f0f0f0")  # 设置窗口背景色
 
