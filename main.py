@@ -10,6 +10,19 @@ import threading
 from pynput import keyboard
 from collections import OrderedDict
 
+def resource_path(relative_path):
+    """ 获取资源文件的正确路径，在开发和打包后都能正常访问 """
+    try:
+        # 获取打包后的临时目录路径
+        if getattr(sys, 'frozen', False):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base_path, relative_path)
+    except Exception as e:
+        print(f"Error in getting resource path: {e}")
+        return None
+
 # Check resource path
 def resource_path(relative_path):
     if hasattr(sys, '_MEIPASS'):
@@ -43,11 +56,6 @@ def load_image(image_path):
     except Exception as e:
         print(f"Failed to load image: {image_path}, Error: {e}")
         return None
-
-# Handle mouse scroll
-def on_scroll(event):
-    canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-    update_visible_rows()
 
 # Toggle window visibility
 def toggle_visibility():
@@ -95,12 +103,12 @@ def process_files():
         return
 
     ball_files = sorted([f for f in os.listdir(ball_replace_folder) if f.endswith('.iff')])
-    picture_files = sorted([f for f in os.listdir(picture_folder) if f.endswith('.png')])
+    picture_files = sorted([f for f in os.listdir(picture_folder) if f.endswith('.jpg')])
 
     ball_images = []
     for ball_file in ball_files:
         index = ball_file.split('.')[0]
-        matching_picture = f"{index}.png"
+        matching_picture = f"{index}.jpg"
 
         if matching_picture in picture_files:
             picture_path = os.path.join(picture_folder, matching_picture)
@@ -205,7 +213,7 @@ def open_settings():
 def create_ui():
     global root, canvas, frame_images, button_frame, progress_bar, select_button
     root = tk.Tk()
-    root.title("篮球替换工具 V0.8 Beta")
+    root.title("篮球替换工具 V0.9 Beta")
     root.geometry("600x600")
     
     # 使用浅蓝色的背景色
@@ -227,8 +235,18 @@ def create_ui():
     scrollbar.pack(side="right", fill="y")
     canvas.configure(yscrollcommand=scrollbar.set)
 
+    # 获取 picture 文件夹路径
+    picture_folder = resource_path('picture')
+    if not os.path.exists(picture_folder):
+        messagebox.showerror("Error", f"{picture_folder} folder does not exist!")
+    else:
+        daigg_image_path = os.path.join(picture_folder, 'daigg.jpg')
+    
+    if not os.path.exists(daigg_image_path):
+        messagebox.showerror("Error", f"daigg.jpg does not exist in {picture_folder}!")
+
     # 加载并固定背景图片在画布左上角
-    image_path = "./daigg.jpg"  # 替换为图片的实际路径
+    image_path = daigg_image_path  # 替换为图片的实际路径
     original_image = Image.open(image_path)
     resized_image = original_image.resize((600, 520), Image.LANCZOS)  # 根据实际画布大小设定
     background_image = ImageTk.PhotoImage(resized_image)
@@ -254,15 +272,22 @@ def create_ui():
 
     # 加载图像并显示
     def load_images_with_progress():
-        ball_replace_folder = './ball_replace'  # 更换为实际路径
-        picture_folder = './picture'  # 更换为实际路径
+    # 定义文件夹路径
+        ball_replace_folder = './ball_replace'
+        picture_folder = './picture'
 
+        # 如果程序是打包后的可执行文件
+        if getattr(sys, 'frozen', False):  # 判断是否是通过 PyInstaller 打包后的 exe 文件
+            # 获取打包后的临时目录路径
+            ball_replace_folder = os.path.join(sys._MEIPASS, 'ball_replace')
+            picture_folder = os.path.join(sys._MEIPASS, 'picture')
+    
         if not os.path.exists(ball_replace_folder) or not os.path.exists(picture_folder):
             messagebox.showerror("Error", "需要的文件夹不存在！")
             return
 
         ball_files = sorted([f for f in os.listdir(ball_replace_folder) if f.endswith('.iff')])
-        picture_files = sorted([f for f in os.listdir(picture_folder) if f.endswith('.png')])
+        picture_files = sorted([f for f in os.listdir(picture_folder) if f.endswith('.jpg')])
 
         ball_images = []
         total_files = len(ball_files)
@@ -271,7 +296,7 @@ def create_ui():
             if index < total_files:
                 ball_file = ball_files[index]
                 index_str = ball_file.split('.')[0]
-                matching_picture = f"{index_str}.png"
+                matching_picture = f"{index_str}.jpg"
 
                 img = None
                 if matching_picture in picture_files:
