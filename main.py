@@ -80,6 +80,7 @@ def start_listener():
     except Exception as e:
         print(f"Error starting hotkey listener: {e}")
 
+
 # Process files
 def process_files():
     ball_replace_folder = resource_path('ball_replace')
@@ -202,80 +203,161 @@ def open_settings():
 
 # UI creation
 def create_ui():
-    global root, canvas, frame_images, button_frame
-    root = ttk.Window(themename="cosmo")  # Set a theme from ttkbootstrap
-    root.title("篮球替换工具 V0.6 Beta")
-    root.geometry("600x480")
+    global root, canvas, frame_images, button_frame, progress_bar, select_button
+    root = ttk.Window(themename="cosmo")  # 设置主题
+    root.title("篮球替换工具 V0.7 Beta")
+    root.geometry("600x600")
     
-    # Use calming shades of blue and green
-    root.configure(bg="#ADD8E6")  # Light Blue for background
+    # 使用蓝绿色调的背景色
+    root.configure(bg="#ADD8E6")  # 浅蓝色背景
 
     # 创建菜单栏
-    menubar = tk.Menu(root, bg="#66CDAA")  # Medium Aquamarine for the menu bar
-    menubar.add_command(label="⚙️ 设置", command=open_settings)  # 将齿轮图标作为菜单项
+    menubar = tk.Menu(root, bg="#66CDAA")  # 中等绿松石色
+    menubar.add_command(label="⚙️ 设置", command=open_settings)  # 设置菜单项
     root.config(menu=menubar)
 
-    # 菜单风格
-    menubar.configure(bg="#66CDAA", fg="white")  # Menu bar background color
+    # 设置菜单风格
+    menubar.configure(bg="#66CDAA", fg="white")  # 菜单背景色
 
     # 创建画布和滚动条框架
-    main_frame = tk.Frame(root, bg="#66CDAA")  # Medium Aquamarine for the frame
+    main_frame = tk.Frame(root, bg="#66CDAA")  # 中等绿松石色
     main_frame.pack(fill="both", expand=True)
 
-    # 创建 canvas 和滚动条
-    canvas = ttk.Canvas(main_frame, bg="#f0f0f0")
+    # 创建画布和滚动条
+    canvas = ttk.Canvas(main_frame, bg="#66CDAA")
     canvas.pack(side="left", fill="both", expand=True)
     scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
     scrollbar.pack(side="right", fill="y")
     canvas.configure(yscrollcommand=scrollbar.set)
 
-    # 快速滚动功能，通过滚轮事件来实现
+    # 加载图片
+    image_path = "./daigg.jpg"  # 请替换为你图片的实际路径
+    original_image = Image.open(image_path)
+    # 调整图片大小以填满画布区域，假设画布的宽度和高度
+    canvas_width = 600  # 根据实际画布大小设定宽度
+    canvas_height = 480  # 根据实际画布大小设定高度
+    resized_image = original_image.resize((canvas_width, canvas_height), Image.LANCZOS)
+    progress_image = ImageTk.PhotoImage(resized_image)
+    # 将图片添加到画布的左上角，填充画布
+    canvas.create_image(0, 0, anchor="nw", image=progress_image)  # 左上角对齐
+    canvas.image = progress_image  # 保存引用避免垃圾回收
+
+    # 快速滚动功能
     def fast_scroll(event):
         if event.delta > 0:
-            canvas.yview_scroll(-3, "units")  # 每次向上滚动多个单位
+            canvas.yview_scroll(-3, "units")
         else:
-            canvas.yview_scroll(3, "units")   # 每次向下滚动多个单位
+            canvas.yview_scroll(3, "units")
 
-    # 绑定滚轮滚动事件
+    # 绑定鼠标滚轮事件
     canvas.bind_all("<MouseWheel>", fast_scroll)
 
-    # 创建用于显示图像的 frame (No bg here, using style)
+    # 创建显示图像的框架
     frame_images = ttk.Frame(canvas)
     canvas.create_window((0, 0), window=frame_images, anchor="nw")
 
-    # Use style to set the background color for ttk.Frame
+    progress_frame = ttk.Frame(root, style="Primary.TFrame", padding=10)
+    progress_frame.pack(fill="x")
+
+    # 添加提示文本
+    progress_label = ttk.Label(progress_frame, text="篮球资源正在加载中，请稍等...", font=("Arial", 10), foreground="#000080")
+    progress_label.pack(pady=(0, 5))  # 放置在进度条上方，并设置间距
+
+    # 设置进度条样式
     style = ttk.Style()
-    style.configure("Custom.TFrame", background="#AFEEEE")  # Pale Turquoise for image frame
-    frame_images.configure(style="Custom.TFrame")
+    style.configure("Custom.Horizontal.TProgressbar", thickness=20, troughcolor="#f0f0f0", background="#66CDAA")  # 设置背景颜色和前景颜色
+    
+    progress_bar = ttk.Progressbar(progress_frame, orient="horizontal", length=580, mode="determinate", style="Custom.Horizontal.TProgressbar")
+    progress_bar.pack(fill="x", pady=20, padx=10)
+    
+    # 初始化进度条
+    progress_bar["value"] = 0
+    progress_bar["maximum"] = 100
 
-    # 在 frame_images 配置事件中更新 scrollregion
-    def update_scrollregion(event):
+    # 更新进度条的函数
+    def update_progress(value=0):
+        progress_bar["value"] = value
+        progress_bar.update_idletasks()  # 刷新进度条
+        root.after(500, load_images_with_progress)  # 延迟500ms加载图像
+
+    # 加载图像并显示
+    def load_images_with_progress():
+        ball_replace_folder = resource_path('ball_replace')
+        picture_folder = resource_path('picture')
+
+        if not os.path.exists(ball_replace_folder):
+            messagebox.showerror("Error", f"{ball_replace_folder} folder does not exist!")
+            return
+
+        if not os.path.exists(picture_folder):
+            messagebox.showerror("Error", f"{picture_folder} folder does not exist!")
+            return
+
+        ball_files = sorted([f for f in os.listdir(ball_replace_folder) if f.endswith('.iff')])
+        picture_files = sorted([f for f in os.listdir(picture_folder) if f.endswith('.png')])
+
+        ball_images = []
+        total_files = len(ball_files)
+
+        def load_next_image(index):
+            if index < total_files:
+                ball_file = ball_files[index]
+                index_str = ball_file.split('.')[0]
+                matching_picture = f"{index_str}.png"
+
+                img = None
+                if matching_picture in picture_files:
+                    picture_path = os.path.join(picture_folder, matching_picture)
+                    img = load_image(picture_path)
+
+                ball_images.append((ball_file, img))
+
+                # 更新进度条
+                progress = (index + 1) / total_files * 100
+                progress_bar["value"] = progress
+                progress_bar.update_idletasks()  # 刷新进度条
+
+                # 延迟加载下一张图像
+                root.after(50, load_next_image, index + 1)
+            else:
+                # 所有图像加载完后显示图像并切换界面
+                display_images(ball_images)
+                show_images()
+                show_balls_folder_button()  # 显示“选择篮球替换路径”按钮
+
+        # 开始加载图像
+        load_next_image(0)
+
+    # 显示图像界面
+    def show_images():
+        # 确保滚动区域更新
         canvas.configure(scrollregion=canvas.bbox("all"))
+        frame_images.tkraise()  # 提升包含图像的 frame 到最前面
+        
+        # 隐藏或销毁蓝色背景框架
+        progress_frame.destroy()  # 或 progress_frame.destroy()
 
-    frame_images.bind("<Configure>", update_scrollregion)
+    # 显示“选择篮球替换路径”按钮，并隐藏进度条
+    def show_balls_folder_button():
+        # 隐藏进度条
+        progress_bar.pack_forget()
 
-    # 创建底部的按钮
-    button_frame = ttk.Frame(root)  # Light Blue for the button area
-    button_frame.pack(side="bottom", fill="x", pady=10)
-    select_button = ttk.Button(button_frame, text="选择篮球替换路径", command=select_balls_folder, style="TButton")
-    select_button.pack(side="bottom", anchor="center")
+        # 显示选择篮球替换路径按钮
+        select_button.pack(pady=10)
 
-    # 底部按钮风格
-    style.configure("TButton", padding=6, relief="flat", background="#40E0D0")  # Turquoise for button background
+    # 隐藏“选择篮球替换路径”按钮
+    button_frame = ttk.Frame(root, padding=10)
+    button_frame.pack()
+    select_button = ttk.Button(button_frame, text="选择篮球替换路径", command=select_balls_folder)
+    select_button.pack(pady=10)
+    select_button.pack_forget()  # 默认隐藏按钮
 
-    # 调整列权重，以便图像可以自适应布局
-    for i in range(5):
-        frame_images.grid_columnconfigure(i, weight=1)
-
-    # 处理文件并显示图像
-    process_files()
+    # 启动进度条更新
+    update_progress()  # 开始更新进度条
 
 
-# Program entry point
-def main():
-    create_ui()
-    root.after(0, start_listener)
-    root.mainloop()
-
+# 主函数入口
 if __name__ == "__main__":
-    main()
+    create_ui()
+    start_listener()
+    root.mainloop()
