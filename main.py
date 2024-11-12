@@ -7,34 +7,22 @@ from ttkbootstrap.constants import *
 from PIL import Image, ImageTk
 import sys
 import threading
-from pynput import keyboard
+import keyboard
 from collections import OrderedDict
-
-def resource_path(relative_path):
-    """ 获取资源文件的正确路径，在开发和打包后都能正常访问 """
-    try:
-        # 获取打包后的临时目录路径
-        if getattr(sys, 'frozen', False):
-            base_path = sys._MEIPASS
-        else:
-            base_path = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(base_path, relative_path)
-    except Exception as e:
-        print(f"Error in getting resource path: {e}")
-        return None
-
-# Check resource path
-def resource_path(relative_path):
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
 
 # Global variables
 is_visible = True
 listener = None
 image_cache = OrderedDict()
 visible_rows = set()
-custom_shortcut = '<F8>'
+custom_shortcut = 'alt+h'
+
+# Check resource path
+def resource_path(relative_path):
+    """ 获取资源文件的正确路径，在开发和打包后都能正常访问 """
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 # Load image and cache it
 def load_image(image_path):
@@ -59,34 +47,37 @@ def load_image(image_path):
 
 # Toggle window visibility
 def toggle_visibility():
+    """切换主窗口的可见性"""
     global is_visible
     is_visible = not is_visible
-    try:
-        if is_visible:
-            root.after(100, lambda: root.deiconify())
-            root.attributes('-topmost', True)
-            print("Window visible and on top")
-        else:
-            root.after(100, lambda: root.withdraw())
-            print("Window hidden")
-    except RuntimeError as e:
-        print(f"Error toggling visibility: {e}")
+    if is_visible:
+        root.deiconify()  # 显示窗口
+        root.attributes('-topmost', True)
+        print("窗口已显示并置顶。")
+    else:
+        root.withdraw()  # 隐藏窗口
+        print("窗口已隐藏。")
 
-# Activate hotkey
-def on_activate():
-    root.after(0, toggle_visibility)
+# Register global hotkey
+def register_hotkey():
+    try:
+        keyboard.add_hotkey(custom_shortcut, toggle_visibility)
+        print(f"全局快捷键监听已启动。按 {custom_shortcut} 切换窗口显示状态。")
+    except Exception as e:
+        print(f"启动全局快捷键监听失败: {e}")
 
 # Start hotkey listener
 def start_listener():
+    """使用 keyboard 模块设置全局快捷键监听"""
     global listener
-    try:
-        listener = keyboard.GlobalHotKeys({
-            custom_shortcut: on_activate,
-        })
-        listener.start()
-        print(f"Hotkey listener started, press {custom_shortcut} to toggle window")
-    except Exception as e:
-        print(f"Error starting hotkey listener: {e}")
+    if listener:
+        listener.stop()  # 先停止已有的监听器
+
+    # 注册全局快捷键 - 例如使用 Ctrl+Alt+H
+    register_hotkey()
+    # 启动新的监听器线程
+    listener = keyboard.GlobalHotKeys({custom_shortcut: toggle_visibility})
+    listener.start()
 
 
 # Process files
@@ -195,11 +186,11 @@ def open_settings():
         shortcut = entry_shortcut.get()
         if shortcut:
             custom_shortcut = shortcut
-            listener.stop()
-            start_listener()
-            settings_window.destroy()
+            # 使用线程启动监听器，避免阻塞主线程
+            threading.Thread(target=start_listener, daemon=True).start()
+            settings_window.destroy()  # 关闭设置窗口
 
-    label = tk.Label(settings_window, text="Custom shortcut (e.g., <F9>):")
+    label = tk.Label(settings_window, text="Custom shortcut (e.g <alt+r>):")
     label.pack(pady=10)
 
     entry_shortcut = tk.Entry(settings_window)
@@ -213,7 +204,7 @@ def open_settings():
 def create_ui():
     global root, canvas, frame_images, button_frame, progress_bar, select_button
     root = tk.Tk()
-    root.title("篮球替换工具 V0.9 Beta")
+    root.title("篮球替换工具 V1.0")
     root.geometry("600x600")
     
     # 使用浅蓝色的背景色
@@ -351,6 +342,9 @@ def create_ui():
     select_button.pack(pady=10)
     select_button.pack_forget()  # 默认隐藏按钮
 
+    # 启动监听器线程
+    threading.Thread(target=start_listener, daemon=True).start()
+
     # 启动加载图像和更新进度条的过程
     load_images_with_progress()
 
@@ -358,5 +352,5 @@ def create_ui():
 # 主函数入口
 if __name__ == "__main__":
     create_ui()
-    start_listener()
+    # start_listener()
     root.mainloop()
