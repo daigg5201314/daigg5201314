@@ -200,11 +200,18 @@ def open_settings():
     button_save = ttk.Button(settings_window, text="Save", command=save_shortcut)
     button_save.pack(pady=10)
 
+def toggle_button(button):
+    if button == "hide":
+        select_button.pack_forget()  # 隐藏按钮
+    elif button == "show":
+        button_frame.pack(side='bottom')
+        select_button.pack(pady=10) #显示按钮
+
 # UI creation
 def create_ui():
-    global root, canvas, frame_images, button_frame, progress_bar, select_button
+    global root, canvas, frame_images, button_frame, progress_bar, select_button, basketball_frame, court_frame
     root = tk.Tk()
-    root.title("篮球替换工具 V1.0")
+    root.title("篮球替换工具 V1.1")
     root.geometry("600x600")
     
     # 使用浅蓝色的背景色
@@ -260,6 +267,10 @@ def create_ui():
     progress_bar = ttk.Progressbar(progress_frame, orient="horizontal", length=580, mode="determinate", style="Custom.Horizontal.TProgressbar")
     progress_bar.pack(fill="x", pady=10, padx=10)
     progress_bar["maximum"] = 100
+
+    # 创建框架用于不同页面
+    court_frame = tk.Frame(root, bg="#66CDAA")
+    basketball_frame = main_frame
 
     # 加载图像并显示
     def load_images_with_progress():
@@ -318,7 +329,9 @@ def create_ui():
         frame_images.tkraise()  # 显示包含图片的 frame
         progress_frame.pack_forget()  # 隐藏进度条框架
         select_button.pack(pady=10)  # 显示“选择篮球替换路径”按钮
-        
+        menubar.add_command(label="篮球", command=lambda: switch_page("basketball"))
+        menubar.add_command(label="球场", command=lambda: switch_page("court"))
+        switch_page("basketball") #选择篮球为主标签
         # 启用滚轮滚动功能
         canvas.bind("<MouseWheel>", fast_scroll)  # 绑定滚轮事件以启用滚动功能
         root.bind_all("<MouseWheel>", fast_scroll)  # 在 root 中绑定以确保滚动捕获
@@ -326,6 +339,17 @@ def create_ui():
     # 创建显示图像的框架
     frame_images = tk.Frame(canvas, bg="#66CDAA")
     canvas.create_window((0, 0), window=frame_images, anchor="nw")
+
+    # 切换页面函数
+    def switch_page(page):
+        if page == "basketball":
+            basketball_frame.pack(fill="both", expand=True)
+            court_frame.pack_forget()
+            toggle_button("show")
+        elif page == "court":
+            court_frame.pack(fill="both", expand=True)
+            basketball_frame.pack_forget()
+            toggle_button("hide")
 
     # 快速滚动功能
     def fast_scroll(event):
