@@ -9,16 +9,49 @@ import sys
 import threading
 import keyboard
 from collections import OrderedDict
-import time
+import re
+import json
 
 # Global variables
 is_visible = True
 listener = None
 image_cache = OrderedDict()
 visible_rows = set()
-custom_shortcut = 'alt+h'
 can_copy = True  # 默认允许点击
 image_labels = {} # 全局字典用于存储图片标签
+CONFIG_FILE = "config.json"
+# 全局变量存储路径
+paths = {
+    "local_folder": None,
+    "courts_folder": None
+}
+
+def load_config():
+    """加载嵌入的配置文件"""
+    config_path = resource_path("config.json")  # 获取配置文件路径
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}  # 如果配置文件不存在，返回空字典
+
+def save_config(config):
+    """保存配置到文件"""
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        print("Configuration saved successfully.")
+    except Exception as e:
+        print(f"Error saving config: {e}")
+
+def fade_out_label(window, alpha=3.0):
+    """逐渐减少标签的透明度，直到完全消失"""
+    if alpha > 0:
+        alpha -= 0.1
+        window.attributes("-alpha", alpha)  # 设置窗口透明度
+        window.after(100, lambda: fade_out_label(window, alpha))  # 递归调用
+    else:
+        window.destroy()  # 完全消失后销毁窗口
+
 
 # Check resource path
 def resource_path(relative_path):
@@ -37,18 +70,39 @@ def switch_page(page_type):
     elif page_type == "courts":
         display_courts_page()
 
+from tkinter import filedialog
+
 def select_folder(folder_type):
+    """
+    通用路径选择函数。
+    根据类型选择路径，并调用对应的处理逻辑，同时保存路径到配置文件。
+    """
     selected_folder = filedialog.askdirectory(title=f"Select replacement path for {folder_type} files")
     if selected_folder:
+        config = load_config()  # 加载现有配置
+
         if folder_type == "balls":
             root.balls_folder = selected_folder
+            config["balls_folder"] = selected_folder
             process_balls_files()  # 处理篮球文件的逻辑
+            print(f"Balls folder selected: {selected_folder}")
+
         elif folder_type == "courts":
             root.courts_folder = selected_folder
+            config["courts_folder"] = selected_folder
             process_courts_files()  # 处理球场文件的逻辑
+            print(f"Courts folder selected: {selected_folder}")
+
         elif folder_type == "local":
             root.local_folder = selected_folder
-            process_local_courts_files()  #处理本地球场的逻辑
+            config["local_folder"] = selected_folder
+            process_local_courts_files()  # 处理本地球场的逻辑
+            print(f"Local folder selected: {selected_folder}")
+
+        save_config(config)  # 保存更新的配置
+    else:
+        print(f"No folder selected for {folder_type} files.")
+
 
 def process_balls_files():
     print("Processing basketball files...")
@@ -118,6 +172,28 @@ def process_local_courts_files():
             if hasattr(root, "courts_folder") and root.courts_folder:
                 copy_folder_contents(src_folder, root.courts_folder)
                 highlight_matching_images()
+
+                # 创建顶级窗口，用于显示消息
+                click_label_window = tk.Toplevel(root)
+                click_label_window.overrideredirect(True)  # 去掉窗口边框
+                click_label_window.attributes("-topmost", True)  # 窗口置顶
+                click_label_window.geometry("+0+0")  # 设置位置为屏幕左上角
+
+                # 在顶级窗口中添加标签
+                click_label = tk.Label(
+                    click_label_window,
+                    text=f"已复制: {os.path.basename(src_folder)}",
+                    bg="#4CAF50",
+                    fg="white",
+                    font=("Arial", 36, "bold"),
+                    relief="solid",
+                    padx=30,
+                    pady=15
+                )
+                click_label.pack()
+
+                # 调用淡出功能
+                fade_out_label(click_label_window)
             else:
                 print("目标路径未设置，请先选择球场替换路径！")
                 messagebox.showwarning("路径错误", "请先选择球场替换路径！")
@@ -229,10 +305,6 @@ def enable_ui_elements():
         root.button_frame.config(bg="white")  # 恢复背景颜色
     print("球场框架已启用")
 
-
-import os
-import re
-
 def toggle_action(toggle_state):
     if hasattr(root, "courts_folder") and root.courts_folder:  # 确保路径存在
         original_path = root.courts_folder
@@ -323,6 +395,28 @@ def display_courts_page():
     local_courts_button.pack(side="top", pady=10)
     root.buttons.append(local_courts_button)
 
+    # 加载配置文件
+    config = load_config()
+    print("Loaded configuration:", config)  # 调试信息，输出加载的配置
+
+    # 初始化路径
+    root.balls_folder = config.get("balls_folder", "")
+    root.courts_folder = config.get("courts_folder", "")
+    root.local_folder = config.get("local_folder", "")
+
+    # 打印加载的路径并处理
+    if root.balls_folder:
+        print(f"Balls folder loaded from config: {root.balls_folder}")
+        process_balls_files()  # 如果路径存在，直接处理篮球文件
+
+    if root.courts_folder:
+        print(f"Courts folder loaded from config: {root.courts_folder}")
+        process_courts_files()  # 如果路径存在，直接处理球场文件
+
+    if root.local_folder:
+        print(f"Local folder loaded from config: {root.local_folder}")
+        process_local_courts_files()  # 如果路径存在，直接处理本地球场文件
+
 # 切换窗口显示
 def toggle_visibility():
     global is_visible
@@ -339,18 +433,26 @@ def update_visibility():
     print(f"UI visibility is now {'visible' if is_visible else 'hidden'}")
 
 # 注册或更新快捷键
-def update_hotkey(new_shortcut=None):
-    global custom_shortcut
-    if new_shortcut:
-        keyboard.remove_hotkey(custom_shortcut)  # 仅移除当前快捷键
-        custom_shortcut = new_shortcut  # 更新快捷键
+def update_hotkey(shortcut):
+    config = load_config()  # 加载现有配置
+    old_shortcut = config.get('shortcut', '')  # 获取旧的快捷键
+    print(f"读取旧的快捷键: {old_shortcut}")
+    if old_shortcut and old_shortcut != shortcut:
+        try:
+            # 移除旧的快捷键，如果已经注册
+            keyboard.remove_hotkey(old_shortcut)
+        except KeyError:
+            pass  # 如果快捷键未注册，则跳过，不抛出异常
+
+    config['shortcut'] = shortcut  # 保存新的快捷键
+    save_config(config)  # 保存更新后的配置到文件
+
     # 直接注册新的快捷键
-    keyboard.add_hotkey(custom_shortcut, toggle_visibility)
-    print(f"Global hotkey updated to: {custom_shortcut}")
+    keyboard.add_hotkey(shortcut, toggle_visibility)
+    print(f"保存新的快捷键: {shortcut}")
 
 # 启动快捷键监听线程
 def start_listener():
-    update_hotkey(custom_shortcut)  # 注册全局快捷键
     keyboard.wait()  # 等待用户按下快捷键
 
 # 打开设置窗口
@@ -371,6 +473,10 @@ def open_settings():
     label.pack(pady=10)
 
     entry_shortcut = tk.Entry(settings_window)
+    # 默认加载已保存的快捷键，如果没有保存过，显示空白
+    config = load_config()
+    custom_shortcut = config.get('shortcut', '')  # 从配置文件加载快捷键
+    print(f"从settings读取的快捷键: {custom_shortcut}")
     entry_shortcut.insert(0, custom_shortcut)
     entry_shortcut.pack(pady=5)
 
@@ -400,8 +506,11 @@ def create_ui():
     frame_main = tk.Frame(root, bg="white")
     frame_main.pack(fill="both", expand=True)
 
+    config = load_config()
+    cur_short = config.get('shortcut', '')
+    print(f"第一次启动读取: {cur_short}")
     # 注册快捷键
-    keyboard.add_hotkey(custom_shortcut, toggle_visibility)
+    keyboard.add_hotkey(cur_short, toggle_visibility)
     # 启动监听器线程
     threading.Thread(target=start_listener, daemon=True).start()
 
