@@ -11,7 +11,7 @@ import keyboard
 from collections import OrderedDict
 import re
 import json
-
+import ctypes
 # Global variables
 is_visible = True
 listener = None
@@ -25,19 +25,42 @@ paths = {
     "local_folder": None,
     "courts_folder": None
 }
+def check_load_config():
+ # 检查文件是否存在
+ config_path = resource_path(CONFIG_FILE)  # 获取配置文件路径
+ print(f"Config file path: {config_path}")
+ if not os.path.exists(config_path):
+    try:
+        # 检查文件是否为空
+        if os.path.getsize(config_path) == 0:
+            save_default_config(config_path)
+    except Exception as e:
+        save_default_config(config_path)
+
+
+def save_default_config(config_path):
+    """保存默认配置到指定路径"""
+    default_config = {
+        "shortcut": "alt+h",
+        "balls_folder": "",
+        "courts_folder": "",
+    }
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(default_config, f, indent=4)
+    print(f"Default configuration saved at {config_path}.")
 
 def load_config():
     """加载嵌入的配置文件"""
-    config_path = resource_path("config.json")  # 获取配置文件路径
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}  # 如果配置文件不存在，返回空字典
+    config_path = resource_path(CONFIG_FILE)  # 获取配置文件路径
+    print(f"文件加载路径：{config_path}")
+    with open(config_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def save_config(config):
     """保存配置到文件"""
+    config_path = resource_path(CONFIG_FILE)  # 获取配置文件路径
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
         print("Configuration saved successfully.")
     except Exception as e:
@@ -55,10 +78,12 @@ def fade_out_label(window, alpha=3.0):
 
 # Check resource path
 def resource_path(relative_path):
-    """ 获取资源文件的正确路径，在开发和打包后都能正常访问 """
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+    """
+    获取资源文件的正确路径，始终指向当前可执行文件所在目录
+    """
+    # 获取当前可执行文件的路径（即 .exe 所在目录）
+    base_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+    return os.path.join(base_path, relative_path)
 
 def switch_page(page_type):
     # 清除当前界面
@@ -166,6 +191,7 @@ def process_local_courts_files():
 
         def handle_copy_event(src_folder):
             """处理图片点击事件并复制内容"""
+            global current_index
             if not can_copy:
                 print("图片点击行为已被禁用")
                 return
@@ -417,39 +443,80 @@ def display_courts_page():
         print(f"Local folder loaded from config: {root.local_folder}")
         process_local_courts_files()  # 如果路径存在，直接处理本地球场文件
 
-# 切换窗口显示
-def toggle_visibility():
-    global is_visible
-    is_visible = not is_visible
-    root.after(0, update_visibility)  # 在主线程中更新 UI
+#显示前台
+def bring_to_foreground():
+    root.deiconify()  # 显示窗口
+    root.attributes('-topmost', True)  # 设置为置顶
+    root.attributes('-topmost', False)  # 取消置顶以防影响其他操作
+    root.update()  # 更新窗口
+    ctypes.windll.user32.SetForegroundWindow(root.winfo_id())  # 强制切换到前台
 
 # 更新显示状态
 def update_visibility():
     if is_visible:
         root.deiconify()  # 显示窗口
-        root.attributes('-topmost', True)  # 置顶窗口
+        bring_to_foreground()  # 强制切换到前台
     else:
         root.withdraw()  # 隐藏窗口
     print(f"UI visibility is now {'visible' if is_visible else 'hidden'}")
 
+# 切换窗口显示
+def toggle_visibility():
+    global is_visible
+    print("切换窗口显示/隐藏")
+    is_visible = not is_visible
+    root.after(0, update_visibility)  # 在主线程中更新 UI
+
+def toggle_onoff():
+    print("开关切换")
+
+def move_left():
+    print("左移操作")
+
+def move_right():
+    print("右移操作")
+
 # 注册或更新快捷键
-def update_hotkey(shortcut):
+def update_hotkey(key_name, shortcut):
+    if not shortcut.strip():  # 检查快捷键是否为空
+        print(f"Error: Shortcut for '{key_name}' cannot be empty.")
+        return
+
     config = load_config()  # 加载现有配置
-    old_shortcut = config.get('shortcut', '')  # 获取旧的快捷键
-    print(f"读取旧的快捷键: {old_shortcut}")
+    old_shortcut = config.get(key_name, '')  # 获取当前快捷键的旧值
+    print(f"读取旧的快捷键 ({key_name}): {old_shortcut}")
+
+    # 尝试移除旧快捷键
     if old_shortcut and old_shortcut != shortcut:
         try:
-            # 移除旧的快捷键，如果已经注册
             keyboard.remove_hotkey(old_shortcut)
+            print(f"移除旧的快捷键 ({key_name}): {old_shortcut}")
         except KeyError:
-            pass  # 如果快捷键未注册，则跳过，不抛出异常
+            print(f"旧的快捷键未注册: {old_shortcut}")
 
-    config['shortcut'] = shortcut  # 保存新的快捷键
+    # 更新配置文件
+    config[key_name] = shortcut  # 保存新的快捷键到指定键
     save_config(config)  # 保存更新后的配置到文件
+    print(f"保存新的快捷键到配置文件 ({key_name}): {shortcut}")
 
-    # 直接注册新的快捷键
-    keyboard.add_hotkey(shortcut, toggle_visibility)
-    print(f"保存新的快捷键: {shortcut}")
+    # 注册新的快捷键
+    try:
+        # 假设每个快捷键对应不同的功能，通过字典映射
+        action_map = {
+            "shortcut_windows": toggle_visibility,
+            "shortcut_onoff": toggle_onoff,
+            "shortcut_left": move_left,
+            "shortcut_right": move_right,
+        }
+        action = action_map.get(key_name)
+        if action:
+            keyboard.add_hotkey(shortcut, action)
+            print(f"注册新的快捷键 ({key_name}): {shortcut}")
+        else:
+            print(f"未找到对应的动作处理函数: {key_name}")
+    except ValueError as e:
+        print(f"Error: 无法注册快捷键 '{shortcut}' ({key_name})，可能格式无效或被占用。详细错误: {e}")
+
 
 # 启动快捷键监听线程
 def start_listener():
@@ -459,29 +526,43 @@ def start_listener():
 def open_settings():
     settings_window = tk.Toplevel(root)
     settings_window.title("Settings")
-    settings_window.geometry("300x150")
+    settings_window.geometry("300x300")
     settings_window.attributes('-topmost', True)
 
     # 保存用户设置的快捷键
     def save_shortcut():
-        shortcut = entry_shortcut.get()
-        if shortcut:
-            update_hotkey(shortcut)  # 更新快捷键
-            settings_window.destroy()  # 关闭设置窗口
+        shortcuts = {key: entry.get() for key, entry in entries.items() if entry.get()}
+        for key, value in shortcuts.items():
+            update_hotkey(key, value)  # 更新快捷键
+        settings_window.destroy()  # 关闭设置窗口
 
-    label = tk.Label(settings_window, text="Custom shortcut (e.g <alt+r>):")
-    label.pack(pady=10)
-
-    entry_shortcut = tk.Entry(settings_window)
-    # 默认加载已保存的快捷键，如果没有保存过，显示空白
+    # 从配置文件加载当前快捷键
     config = load_config()
-    custom_shortcut = config.get('shortcut', '')  # 从配置文件加载快捷键
-    print(f"从settings读取的快捷键: {custom_shortcut}")
-    entry_shortcut.insert(0, custom_shortcut)
-    entry_shortcut.pack(pady=5)
+    print(f"从settings读取的快捷键: {config}")
 
+    # 定义快捷键的标签和配置键
+    shortcuts_info = [
+        ("切换窗口 (e.g., <alt+r>):", "shortcut_windows"),
+        ("开/关按钮 (e.g., <alt+s>):", "shortcut_onoff"),
+        ("左移 (e.g., <alt+a>):", "shortcut_left"),
+        ("右移 (e.g., <alt+d>):", "shortcut_right"),
+    ]
+
+    # 创建输入框与标签
+    entries = {}
+    for label_text, config_key in shortcuts_info:
+        label = tk.Label(settings_window, text=label_text)
+        label.pack(pady=5)
+
+        entry = tk.Entry(settings_window)
+        entry.insert(0, config.get(config_key, ''))  # 加载已保存的快捷键
+        entry.pack(pady=5)
+
+        entries[config_key] = entry
+
+    # 保存按钮
     button_save = ttk.Button(settings_window, text="Save", command=save_shortcut)
-    button_save.pack(pady=10)
+    button_save.pack(pady=20)
 
 # 创建主窗口
 def create_ui():
@@ -502,17 +583,34 @@ def create_ui():
     menubar.add_command(label="球场", command=lambda: switch_page("courts"))
     root.config(menu=menubar)
 
-    # 创建主框架
+   # 创建主框架
     frame_main = tk.Frame(root, bg="white")
     frame_main.pack(fill="both", expand=True)
 
+    check_load_config()
     config = load_config()
-    cur_short = config.get('shortcut', '')
-    print(f"第一次启动读取: {cur_short}")
+
+    # 定义快捷键及其对应的功能
+    hotkeys = {
+        "shortcut_windows": toggle_visibility,
+        "shortcut_onoff": toggle_onoff,
+        "shortcut_left": move_left,
+        "shortcut_right": move_right,
+    }
+
     # 注册快捷键
-    keyboard.add_hotkey(cur_short, toggle_visibility)
+    for key, action in hotkeys.items():
+        shortcut = config.get(key, '')
+        if shortcut:  # 如果快捷键非空
+            keyboard.add_hotkey(shortcut, action)
+
+    # 打印已加载的快捷键
+    # print(f"第一次启动读取: {', '.join([f'{key}: {config.get(key, "")}' for key in hotkeys])}")
+
     # 启动监听器线程
     threading.Thread(target=start_listener, daemon=True).start()
+    # 启动后默认显示球场界面
+    switch_page("courts")
 
 if __name__ == "__main__":
     create_ui()
