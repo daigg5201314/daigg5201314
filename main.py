@@ -28,7 +28,7 @@ paths = {
 def check_load_config():
  # 检查文件是否存在
  config_path = resource_path(CONFIG_FILE)  # 获取配置文件路径
- print(f"Config file path: {config_path}")
+#  print(f"Config file path: {config_path}")
  if not os.path.exists(config_path):
     try:
         # 检查文件是否为空
@@ -52,7 +52,7 @@ def save_default_config(config_path):
 def load_config():
     """加载嵌入的配置文件"""
     config_path = resource_path(CONFIG_FILE)  # 获取配置文件路径
-    print(f"文件加载路径：{config_path}")
+    # print(f"文件加载路径：{config_path}")
     with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -95,7 +95,7 @@ def switch_page(page_type):
     elif page_type == "courts":
         display_courts_page()
 
-from tkinter import filedialog
+
 
 def select_folder(folder_type):
     """
@@ -179,7 +179,7 @@ def process_local_courts_files():
                     file_path = os.path.join(folder_path, file_name)
                     if file_name.lower().endswith(image_extensions):
                         try:
-                            image = Image.open(file_path)
+                            image = Image.open(file_path).convert("RGB")
                             image.thumbnail((180, 200))  # 缩略图大小
                             img = ImageTk.PhotoImage(image)
                             court_images.append((file_name, img, folder_path))
@@ -187,7 +187,7 @@ def process_local_courts_files():
                         except Exception as e:
                             print(f"Failed to load image {file_path}: {e}")
 
-        print(f"Loaded {len(court_images)} images for display.")  # 调试信息
+        # print(f"Loaded {len(court_images)} images for display.")  # 调试信息
 
         def handle_copy_event(src_folder):
             """处理图片点击事件并复制内容"""
@@ -211,7 +211,7 @@ def process_local_courts_files():
                     text=f"已复制: {os.path.basename(src_folder)}",
                     bg="#4CAF50",
                     fg="white",
-                    font=("Arial", 36, "bold"),
+                    font=("楷体", 30, "bold"),
                     relief="solid",
                     padx=30,
                     pady=15
@@ -281,7 +281,7 @@ def process_local_courts_files():
         ).pack(pady=20)
 
     image_display_frame.update_idletasks()
-    print("Display courts page update completed.")  # 完成调试信息
+    # print("Display courts page update completed.")  # 完成调试信息
 
 
 def highlight_matching_images():
@@ -316,7 +316,6 @@ def disable_ui_elements():
             if isinstance(child, tk.Button) and child.cget("text") not in ["开启", "关闭"]:
                 child.config(state="disabled")  # 禁用非“开启/关闭”按钮
         root.button_frame.config(bg="gray")  # 更改背景颜色以表示不可用状态
-    print("球场框架已禁用（保留开启/关闭按钮）")
 
 
 def enable_ui_elements():
@@ -329,60 +328,63 @@ def enable_ui_elements():
             if isinstance(child, tk.Button):
                 child.config(state="normal")
         root.button_frame.config(bg="white")  # 恢复背景颜色
-    print("球场框架已启用")
 
 def toggle_action(toggle_state):
-    if hasattr(root, "courts_folder") and root.courts_folder:  # 确保路径存在
-        original_path = root.courts_folder
-        
-        # 正则表达式匹配完整单词 'levels' 和 'levels_stop'
-        pattern_levels = r'\blevels\b'
-        pattern_levels_stop = r'\blevels_stop\b'
+    """
+    根据开关状态切换路径并控制界面交互。
+    """
+    if not hasattr(root, "courts_folder") or not root.courts_folder:
+        print("当前未选择球场路径，无法切换状态")
+        messagebox.showerror("路径错误", "请先选择球场路径！")
+        return
 
-        if toggle_state.get():  # 开启状态，修改为 'levels'
-            print("切换已开启")
-            # 启用按钮和界面
-            enable_ui_elements()
+    original_path = root.courts_folder
+    pattern_levels = r'\blevels\b'
+    pattern_levels_stop = r'\blevels_stop\b'
 
-            # 如果路径中有 'levels_stop'，替换为 'levels'
-            if re.search(pattern_levels_stop, original_path):  # 检查是否包含完整的 'levels_stop'
-                updated_path = re.sub(pattern_levels_stop, 'levels', original_path, count=1)  # 只替换第一个 'levels_stop'
-                try:
-                    os.rename(original_path, updated_path)
-                    root.courts_folder = updated_path
-                    print(f"当前球场路径已修改为：{root.courts_folder}")
-                except OSError as e:
-                    print(f"重命名文件夹失败：{e}")
-            else:
-                print(f"路径已是 'levels'，无需修改：{original_path}")
-                
-        else:  # 关闭状态，修改为 'levels_stop'
-            print("切换已关闭")
-            # 禁用按钮和界面
-            disable_ui_elements()
+    if toggle_state.get():  # 开启状态
+        enable_ui_elements()
+        updated_path = re.sub(pattern_levels_stop, 'levels', original_path, count=1)
+        rename_folder(original_path, updated_path)
+    else:  # 关闭状态
+        disable_ui_elements()
+        updated_path = re.sub(pattern_levels, 'levels_stop', original_path, count=1)
+        rename_folder(original_path, updated_path)
 
-            # 如果路径中有 'levels'，替换为 'levels_stop'
-            if re.search(pattern_levels, original_path):  # 检查是否包含完整的 'levels'
-                updated_path = re.sub(pattern_levels, 'levels_stop', original_path, count=1)  # 只替换第一个 'levels'
-                try:
-                    os.rename(original_path, updated_path)
-                    root.courts_folder = updated_path
-                    print(f"当前球场路径已修改为：{root.courts_folder}")
-                except OSError as e:
-                    print(f"重命名文件夹失败：{e}")
-            else:
-                print(f"路径已是 'levels_stop'，无需修改：{original_path}")
-    else:
-        print("请先选择球场路径")
-
+def rename_folder(original_path, updated_path):
+    """
+    尝试重命名文件夹，并更新 courts_folder 属性。
+    """
+    try:
+        if os.path.isdir(updated_path):
+            print(f"目标路径已存在：{updated_path}，无法重命名")
+            # messagebox.showwarning("路径冲突", f"目标路径已存在：{updated_path}")
+        else:
+            os.rename(original_path, updated_path)
+            root.courts_folder = updated_path
+            # print(f"路径成功修改为：{updated_path}")
+    except OSError as e:
+        print(f"重命名路径失败：{e}")
+        messagebox.showerror("重命名失败", f"重命名路径失败：{e}")
 
 def display_courts_page():
     # 按钮布局框架
+    global toggle_state,toggle_button
     root.button_frame = tk.Frame(frame_main, bg="white")
     root.button_frame.pack(fill="x", pady=10)
     root.buttons = []  # 全局按钮列表
+
+    # 加载配置文件
+    config = load_config()
+    # print("Loaded configuration:", config)  # 调试信息，输出加载的配置
+
+    # 初始化路径
+    root.balls_folder = config.get("balls_folder", "")
+    root.courts_folder = config.get("courts_folder", "")
+    root.local_folder = config.get("local_folder", "")
+
     # 开关level按钮
-    toggle_state = tk.BooleanVar(value=True)  # 初始状态为关闭
+    toggle_state = tk.BooleanVar(value=True)  # 初始状态为打开
     toggle_action(toggle_state)
     toggle_button = tk.Button(
     root.button_frame,
@@ -421,26 +423,17 @@ def display_courts_page():
     local_courts_button.pack(side="top", pady=10)
     root.buttons.append(local_courts_button)
 
-    # 加载配置文件
-    config = load_config()
-    print("Loaded configuration:", config)  # 调试信息，输出加载的配置
-
-    # 初始化路径
-    root.balls_folder = config.get("balls_folder", "")
-    root.courts_folder = config.get("courts_folder", "")
-    root.local_folder = config.get("local_folder", "")
-
     # 打印加载的路径并处理
     if root.balls_folder:
-        print(f"Balls folder loaded from config: {root.balls_folder}")
+        print(f"从配置加载的Balls文件夹: {root.balls_folder}")
         process_balls_files()  # 如果路径存在，直接处理篮球文件
 
     if root.courts_folder:
-        print(f"Courts folder loaded from config: {root.courts_folder}")
+        print(f"从配置加载的Courts文件夹: {root.courts_folder}")
         process_courts_files()  # 如果路径存在，直接处理球场文件
 
     if root.local_folder:
-        print(f"Local folder loaded from config: {root.local_folder}")
+        print(f"从配置加载的本地文件夹: {root.local_folder}")
         process_local_courts_files()  # 如果路径存在，直接处理本地球场文件
 
 #显示前台
@@ -458,17 +451,42 @@ def update_visibility():
         bring_to_foreground()  # 强制切换到前台
     else:
         root.withdraw()  # 隐藏窗口
-    print(f"UI visibility is now {'visible' if is_visible else 'hidden'}")
+    print(f"切换窗口 {'显示' if is_visible else '隐藏'}")
 
 # 切换窗口显示
 def toggle_visibility():
     global is_visible
-    print("切换窗口显示/隐藏")
     is_visible = not is_visible
     root.after(0, update_visibility)  # 在主线程中更新 UI
 
 def toggle_onoff():
-    print("开关切换")
+    global toggle_state,toggle_button
+    toggle_state.set(not toggle_state.get()),
+    toggle_button.config(text="开启" if toggle_state.get() else "关闭"),
+    toggle_action(toggle_state)
+
+    # 创建顶级窗口，用于显示消息
+    click_label_window = tk.Toplevel(root)
+    click_label_window.overrideredirect(True)  # 去掉窗口边框
+    click_label_window.attributes("-topmost", True)  # 窗口置顶
+    click_label_window.geometry("+0+0")  # 设置位置为屏幕左上角
+
+    # 在顶级窗口中添加标签
+    click_label = tk.Label(
+        click_label_window,
+        text=f"开关操作:{'开启' if toggle_state.get() else '关闭'}",
+        bg="#4CAF50",
+        fg="white",
+        font=("楷体", 30, "bold"),
+        relief="solid",
+        padx=30,
+        pady=15
+    )
+    click_label.pack()
+
+    # 调用淡出功能
+    fade_out_label(click_label_window)
+    # print(f"开关操作 {'开启' if toggle_state.get() else '关闭'}")
 
 def move_left():
     print("左移操作")
@@ -522,19 +540,41 @@ def update_hotkey(key_name, shortcut):
 def start_listener():
     keyboard.wait()  # 等待用户按下快捷键
 
+# 检查快捷键是否冲突
+def check_shortcut_conflict(new_shortcuts, current_config, shortcuts_info):
+    all_shortcuts = current_config.copy()
+    conflicts = []
+    
+    # 合并当前配置和新配置
+    all_shortcuts.update(new_shortcuts)
+    
+    # 逐一检查新快捷键是否与其他快捷键冲突
+    for new_key, new_value in new_shortcuts.items():
+        for existing_key, existing_value in all_shortcuts.items():
+            if new_key != existing_key and new_value == existing_value:
+                # 找到冲突项后，获取两项的描述
+                conflicting_item = next((item[0] for item in shortcuts_info if item[1] == existing_key), existing_key)
+                current_item = next((item[0] for item in shortcuts_info if item[1] == new_key), new_key)
+                conflicts.append((current_item, conflicting_item))
+    
+    return conflicts
+
+# 设置样式
+def setup_style():
+    style = tb.Style()  # 使用 ttkbootstrap 的样式管理器
+    style.theme_use('cosmo')  # 设置主题
+    style.configure("Custom.TButton", background="lightblue", foreground="wihte", font=("Arial", 12))
+
 # 打开设置窗口
 def open_settings():
     settings_window = tk.Toplevel(root)
     settings_window.title("Settings")
     settings_window.geometry("300x300")
     settings_window.attributes('-topmost', True)
-
-    # 保存用户设置的快捷键
-    def save_shortcut():
-        shortcuts = {key: entry.get() for key, entry in entries.items() if entry.get()}
-        for key, value in shortcuts.items():
-            update_hotkey(key, value)  # 更新快捷键
-        settings_window.destroy()  # 关闭设置窗口
+    
+    # 使用 ttkbootstrap 样式
+    style = tb.Style()
+    style.theme_use('cosmo')
 
     # 从配置文件加载当前快捷键
     config = load_config()
@@ -542,27 +582,47 @@ def open_settings():
 
     # 定义快捷键的标签和配置键
     shortcuts_info = [
-        ("切换窗口 (e.g., <alt+r>):", "shortcut_windows"),
-        ("开/关按钮 (e.g., <alt+s>):", "shortcut_onoff"),
-        ("左移 (e.g., <alt+a>):", "shortcut_left"),
-        ("右移 (e.g., <alt+d>):", "shortcut_right"),
+        ("切换窗口:", "shortcut_windows"),
+        ("开/关按钮:", "shortcut_onoff"),
+        ("左移:", "shortcut_left"),
+        ("右移:", "shortcut_right"),
     ]
 
     # 创建输入框与标签
     entries = {}
-    for label_text, config_key in shortcuts_info:
+    for row, (label_text, config_key) in enumerate(shortcuts_info):
         label = tk.Label(settings_window, text=label_text)
-        label.pack(pady=5)
+        label.grid(row=row, column=0, padx=10, pady=5, sticky="w")
 
         entry = tk.Entry(settings_window)
         entry.insert(0, config.get(config_key, ''))  # 加载已保存的快捷键
-        entry.pack(pady=5)
+        entry.grid(row=row, column=1, padx=10, pady=5, sticky="w")
 
         entries[config_key] = entry
 
+    # 保存用户设置的快捷键
+    def save_shortcut():
+        # 获取用户输入的快捷键
+        shortcuts = {key: entry.get() for key, entry in entries.items() if entry.get()}
+        
+        # 检查快捷键是否冲突
+        conflicts = check_shortcut_conflict(shortcuts, config, shortcuts_info)
+
+        if conflicts:
+         # 如果有冲突，弹出提示框，显示简化的冲突信息
+            conflict_messages = "\n".join(
+                f"'{item1}' 与 '{item2}' 冲突，请修改 {item1}" for item1, item2 in conflicts
+            )
+            messagebox.showerror("快捷键冲突", conflict_messages)
+        else:
+            # 如果没有冲突，更新快捷键并关闭窗口
+            for key, value in shortcuts.items():
+                update_hotkey(key, value)
+            settings_window.destroy()  # 关闭设置窗口
+
     # 保存按钮
     button_save = ttk.Button(settings_window, text="Save", command=save_shortcut)
-    button_save.pack(pady=20)
+    button_save.grid(row=len(shortcuts_info), column=0, columnspan=2, pady=20)
 
 # 创建主窗口
 def create_ui():
@@ -603,9 +663,6 @@ def create_ui():
         shortcut = config.get(key, '')
         if shortcut:  # 如果快捷键非空
             keyboard.add_hotkey(shortcut, action)
-
-    # 打印已加载的快捷键
-    # print(f"第一次启动读取: {', '.join([f'{key}: {config.get(key, "")}' for key in hotkeys])}")
 
     # 启动监听器线程
     threading.Thread(target=start_listener, daemon=True).start()
