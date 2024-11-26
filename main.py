@@ -19,6 +19,7 @@ image_cache = OrderedDict()
 visible_rows = set()
 can_copy = True  # 默认允许点击
 image_labels = {} # 全局字典用于存储图片标签
+current_index = -1 # 初始状态，没有图片被选中
 CONFIG_FILE = "config.json"
 # 全局变量存储路径
 paths = {
@@ -41,7 +42,11 @@ def check_load_config():
 def save_default_config(config_path):
     """保存默认配置到指定路径"""
     default_config = {
-        "shortcut": "alt+h",
+        "shortcut_windows": "alt+h",
+        "shortcut_onoff": "alt+r",
+        "shortcut_left": "-",
+        "shortcut_right": "=",
+        "local_folder": "",
         "balls_folder": "",
         "courts_folder": "",
     }
@@ -158,20 +163,19 @@ def delete_existing_files(dest_folder):
     except Exception as e:
         print(f"Error deleting files: {e}")
 
-def process_local_courts_files():
-    """显示球场页面，并加载本地球场路径的图片"""
-    global img_label, name_label
+def display_court_images(image_display_frame):
+    """显示球场页面并加载本地球场路径的图片"""
+    global court_images, image_labels, folder_paths
 
-    # 图片显示框架
-    image_display_frame = tk.Frame(frame_main, bg="white")
-    image_display_frame.pack(fill="both", expand=True, pady=10, padx=10)
+    # 清空旧内容
+    for widget in image_display_frame.winfo_children():
+        widget.destroy()
 
-    # 如果 local_folder 属性存在且有效
+    court_images = []  # 用于存储球场图片和路径
+    folder_paths = {}  # 保存文件夹路径用于复制操作
+    image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
+
     if hasattr(root, 'local_folder') and os.path.isdir(root.local_folder):
-        court_images = []  # 用于存储球场图片和路径
-        folder_paths = {}  # 保存文件夹路径用于复制操作
-        image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
-
         for folder_name in os.listdir(root.local_folder):
             folder_path = os.path.join(root.local_folder, folder_name)
             if os.path.isdir(folder_path):
@@ -187,64 +191,7 @@ def process_local_courts_files():
                         except Exception as e:
                             print(f"Failed to load image {file_path}: {e}")
 
-        # print(f"Loaded {len(court_images)} images for display.")  # 调试信息
-
-        def handle_copy_event(src_folder):
-            """处理图片点击事件并复制内容"""
-            global current_index
-            if not can_copy:
-                print("图片点击行为已被禁用")
-                return
-            if hasattr(root, "courts_folder") and root.courts_folder:
-                copy_folder_contents(src_folder, root.courts_folder)
-                highlight_matching_images()
-
-                # 创建顶级窗口，用于显示消息
-                click_label_window = tk.Toplevel(root)
-                click_label_window.overrideredirect(True)  # 去掉窗口边框
-                click_label_window.attributes("-topmost", True)  # 窗口置顶
-                click_label_window.geometry("+0+0")  # 设置位置为屏幕左上角
-
-                # 在顶级窗口中添加标签
-                click_label = tk.Label(
-                    click_label_window,
-                    text=f"已复制: {os.path.basename(src_folder)}",
-                    bg="#4CAF50",
-                    fg="white",
-                    font=("楷体", 30, "bold"),
-                    relief="solid",
-                    padx=30,
-                    pady=15
-                )
-                click_label.pack()
-
-                # 调用淡出功能
-                fade_out_label(click_label_window)
-            else:
-                print("目标路径未设置，请先选择球场替换路径！")
-                messagebox.showwarning("路径错误", "请先选择球场替换路径！")
-
-        def copy_folder_contents(src_folder, dest_folder):
-            """将源文件夹中的内容复制到目标文件夹，不包括源文件夹本身"""
-            if not os.path.exists(dest_folder):
-                os.makedirs(dest_folder)  # 如果目标路径不存在，创建它
-
-            delete_existing_files(dest_folder)
-
-            try:
-                for item in os.listdir(src_folder):
-                    src_path = os.path.join(src_folder, item)
-                    dest_path = os.path.join(dest_folder, item)
-
-                    if os.path.isdir(src_path):
-                        shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(src_path, dest_path)
-
-                print(f"Copied contents from {src_folder} to {dest_folder}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to copy file: {e}")
-
+        # 创建图片和标签的显示
         for idx, (court_file, img, folder_path) in enumerate(court_images):
             row_num = idx // 3
             col_num = idx % 3
@@ -258,12 +205,12 @@ def process_local_courts_files():
             img_label.pack()
             img_label.bind(
                 "<Button-1>",
-                lambda event, src=folder_path: handle_copy_event(src)
+                lambda event, src=folder_path: handle_image_click(src)
             )
 
             # 显示名称（去掉后缀）
-            file_name_without_ext = os.path.splitext(court_file)[0]  # 去掉文件后缀
-            name_label = tk.Label(frame, text=file_name_without_ext, bg="white", font=("Arial", 10))
+            file_name_without_ext = os.path.splitext(court_file)[0]
+            name_label = tk.Label(frame, text=file_name_without_ext, bg="white", font=("楷体", 10))
             name_label.pack()
 
             # 将标签存入全局字典
@@ -272,7 +219,7 @@ def process_local_courts_files():
         # 加载完成后高亮匹配的标签
         highlight_matching_images()
     else:
-        print("No valid folder selected or folder does not exist.")  # 调试信息
+        print("No valid folder selected or folder does not exist.")
         tk.Label(
             image_display_frame,
             text="请先选择本地球场路径以加载图片。",
@@ -281,11 +228,119 @@ def process_local_courts_files():
         ).pack(pady=20)
 
     image_display_frame.update_idletasks()
-    # print("Display courts page update completed.")  # 完成调试信息
 
+def switch_selection(direction):
+    """切换选项"""
+    global current_index, court_images
+
+    if not court_images:  # 如果没有加载图片，直接返回====-
+        return
+
+    # 取消当前高亮
+    if 0 <= current_index < len(court_images):
+        deselect_current_option()
+
+    # 更新索引
+    current_index = (current_index + direction) % len(court_images)
+
+    # 高亮新选项
+    highlight_current_option()
+
+def deselect_current_option():
+    """取消当前选项的高亮"""
+    global current_index, court_images, image_labels
+
+    if 0 <= current_index < len(court_images):
+        court_file, _, _ = court_images[current_index]
+        file_name_without_ext = os.path.splitext(court_file)[0]
+        if file_name_without_ext in image_labels:
+            image_labels[file_name_without_ext].config(bg="white")  # 恢复默认背景色
+
+def highlight_current_option():
+    """高亮当前选中的选项"""
+    global current_index, court_images, image_labels
+
+    if 0 <= current_index < len(court_images):
+        court_file, _, folder_path = court_images[current_index]
+        file_name_without_ext = os.path.splitext(court_file)[0]
+
+        if file_name_without_ext in image_labels:
+            image_labels[file_name_without_ext].config(bg="#4CAF50")  # 设置高亮背景色
+
+        # 自动模拟点击事件
+        handle_image_click(folder_path)
+
+
+def handle_image_click(src_folder):
+    """处理图片点击事件并复制内容"""
+    if not can_copy:
+        print("图片点击行为已被禁用")
+        return
+
+    if hasattr(root, "courts_folder") and root.courts_folder:
+        copy_folder_contents(src_folder, root.courts_folder)
+        highlight_matching_images()
+        show_copy_feedback(src_folder)
+    else:
+        print("目标路径未设置，请先选择球场替换路径！")
+        messagebox.showwarning("路径错误", "请先选择球场替换路径！")
+
+def show_copy_feedback(src_folder):
+    """显示复制完成的反馈消息"""
+    click_label_window = tk.Toplevel(root)
+    click_label_window.overrideredirect(True)  # 去掉窗口边框
+    click_label_window.attributes("-topmost", True)  # 窗口置顶
+    click_label_window.geometry("+0+0")  # 设置位置为屏幕左上角
+
+    click_label = tk.Label(
+        click_label_window,
+        text=f"已复制: {os.path.basename(src_folder)}",
+        bg="#4CAF50",
+        fg="white",
+        font=("楷体", 30, "bold"),
+        relief="solid",
+        padx=30,
+        pady=15
+    )
+    click_label.pack()
+
+    fade_out_label(click_label_window)  # 调用淡出功能
+
+def copy_folder_contents(src_folder, dest_folder):
+    """将源文件夹中的内容复制到目标文件夹，不包括源文件夹本身"""
+    if not os.path.exists(dest_folder):
+        os.makedirs(dest_folder)  # 如果目标路径不存在，创建它
+
+    delete_existing_files(dest_folder)  # 删除目标路径中的现有文件
+
+    try:
+        for item in os.listdir(src_folder):
+            src_path = os.path.join(src_folder, item)
+            dest_path = os.path.join(dest_folder, item)
+
+            if os.path.isdir(src_path):
+                shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src_path, dest_path)
+
+        print(f"Copied contents from {src_folder} to {dest_folder}")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to copy file: {e}")
+
+def process_local_courts_files():
+    """显示球场页面，并加载本地球场路径的图片"""
+    global image_display_frame
+
+    # 图片显示框架
+    image_display_frame = tk.Frame(frame_main, bg="white")
+    image_display_frame.pack(fill="both", expand=True, pady=10, padx=10)
+
+    # 调用模块 1: 加载并显示图片
+    display_court_images(image_display_frame)
 
 def highlight_matching_images():
     """高亮显示与目标路径匹配的图片标签"""
+    global current_index
     # 检查 courts_folder 属性是否存在且有效
     if not hasattr(root, "courts_folder") or not root.courts_folder or not os.path.isdir(root.courts_folder):
         print("目标路径未设置或无效，跳过高亮逻辑。")
@@ -299,11 +354,12 @@ def highlight_matching_images():
     }
 
     # 遍历标签字典，更新标签样式
-    for name, label in image_labels.items():
+    for idx, (name, label) in enumerate(image_labels.items()):
         if name in matching_names:
-            label.config(bg="yellow", font=("Arial", 12, "bold"))
+            label.config(bg="yellow", font=("楷体", 10, "bold"))
+            current_index = idx
         else:
-            label.config(bg="white", font=("Arial", 10))
+            label.config(bg="white", font=("楷体", 10))
 
 
 def disable_ui_elements():
@@ -335,7 +391,7 @@ def toggle_action(toggle_state):
     """
     if not hasattr(root, "courts_folder") or not root.courts_folder:
         print("当前未选择球场路径，无法切换状态")
-        messagebox.showerror("路径错误", "请先选择球场路径！")
+        messagebox.showwarning("路径错误", "请先选择球场路径！")
         return
 
     original_path = root.courts_folder
@@ -364,8 +420,8 @@ def rename_folder(original_path, updated_path):
             root.courts_folder = updated_path
             # print(f"路径成功修改为：{updated_path}")
     except OSError as e:
-        print(f"重命名路径失败：{e}")
-        messagebox.showerror("重命名失败", f"重命名路径失败：{e}")
+        # print(f"重命名路径失败：{e}")
+        messagebox.showwarning("重命名失败", f"重命名路径失败：{e}")
 
 def display_courts_page():
     # 按钮布局框架
@@ -459,6 +515,7 @@ def toggle_visibility():
     is_visible = not is_visible
     root.after(0, update_visibility)  # 在主线程中更新 UI
 
+# 切换开关
 def toggle_onoff():
     global toggle_state,toggle_button
     toggle_state.set(not toggle_state.get()),
@@ -489,9 +546,11 @@ def toggle_onoff():
     # print(f"开关操作 {'开启' if toggle_state.get() else '关闭'}")
 
 def move_left():
+    switch_selection(-1)
     print("左移操作")
 
 def move_right():
+    switch_selection(1)
     print("右移操作")
 
 # 注册或更新快捷键
@@ -559,12 +618,6 @@ def check_shortcut_conflict(new_shortcuts, current_config, shortcuts_info):
     
     return conflicts
 
-# 设置样式
-def setup_style():
-    style = tb.Style()  # 使用 ttkbootstrap 的样式管理器
-    style.theme_use('cosmo')  # 设置主题
-    style.configure("Custom.TButton", background="lightblue", foreground="wihte", font=("Arial", 12))
-
 # 打开设置窗口
 def open_settings():
     settings_window = tk.Toplevel(root)
@@ -572,10 +625,6 @@ def open_settings():
     settings_window.geometry("300x300")
     settings_window.attributes('-topmost', True)
     
-    # 使用 ttkbootstrap 样式
-    style = tb.Style()
-    style.theme_use('cosmo')
-
     # 从配置文件加载当前快捷键
     config = load_config()
     print(f"从settings读取的快捷键: {config}")
