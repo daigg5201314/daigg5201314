@@ -1,9 +1,9 @@
 {
     "shortcut_windows": "alt+r",
-    "shortcut_onoff":"alt+h",
+    "shortcut_onoff": "alt+h",
     "shortcut_left": "-",
     "shortcut_right": "=",
     "balls_folder": "D:/example/balls",
-    "local_folder": "D:/test/daigg5201314/courts",
-    "courts_folder": "D:/test/daigg5201314/mods/levels"
+    "local_folder": "D:/test/daigg5201314/mods/levels",
+    "replace_folder": "D:/test/daigg5201314/courts"
 }
