@@ -46,45 +46,81 @@ def rename_folder(courts_package,original_path, updated_path):
     尝试重命名文件夹，并更新 local_folder 属性。
     """
     try:
-        if os.path.isdir(updated_path):
-            print(f"目标路径已存在：{updated_path}，无需重命名")
-            # messagebox.showwarning("路径冲突", f"目标路径已存在：{updated_path}")
-        else:
-            os.rename(original_path, updated_path)
-            courts_package.local_folder = updated_path
-            # print(f"路径成功修改为：{updated_path}")
+        os.rename(original_path, updated_path)
+        courts_package.local_folder = updated_path
+        print(f"路径成功修改为：{updated_path}")
     except OSError as e:
         # print(f"重命名路径失败：{e}")
         messagebox.showwarning("重命名失败", f"重命名路径失败：{e}")
 
-def toggle_action(toggle_state,courts_page):
+def toggle_action(toggle_state, courts_page):
     """
     根据开关状态切换路径并控制界面交互。
     """
+    # 检查路径是否存在
     if not hasattr(courts_page, "local_folder") or not courts_page.local_folder:
-        print("当前未选择球场路径，无法切换状态")
         messagebox.showwarning("路径错误", "请先选择球场路径！")
         return
 
     original_path = courts_page.local_folder
-    pattern_levels = r'\blevels\b'
-    pattern_levels_stop = r'\blevels_stop\b'
+    print(f"传入的路径: {original_path}")
 
-    if toggle_state.get():  # 开启状态
-        enable_ui_elements(courts_page)
-        updated_path = re.sub(pattern_levels_stop, 'levels', original_path, count=1)
-        rename_folder(courts_page, original_path, updated_path)
-    else:  # 关闭状态
-        disable_ui_elements(courts_page)
-        updated_path = re.sub(pattern_levels, 'levels_stop', original_path, count=1)
-        rename_folder(courts_page, original_path, updated_path)
+    # 检查路径是否存在
+    if not os.path.exists(original_path):
+        messagebox.showerror("路径错误", "路径不存在，请重新选择！")
+        return
+
+    # 提取父目录和当前目录名
+    parent_dir = os.path.dirname(original_path)
+    current_dir = os.path.basename(original_path)
+
+    # 检查当前目录名是否以 "levels" 开头
+    if not current_dir.startswith("levels"):
+        messagebox.showerror("路径错误", "路径的末尾目录名必须包含 'levels'！")
+        return
+
+    try:
+        # 根据开关状态生成目标目录名
+        if toggle_state.get():  # 开启状态：目标目录名为 "levels"
+            target_dir = "levels"
+        else:  # 关闭状态：目标目录名为 "levels_stop"
+            target_dir = "levels_stop"
+
+        # 如果当前目录名与目标目录名不一致，则需要重命名
+        if current_dir != target_dir:
+            updated_path = os.path.join(parent_dir, target_dir)
+
+            # 确保目标路径不存在（否则重命名会失败）
+            if os.path.exists(updated_path):
+                messagebox.showerror("路径冲突", f"目标路径已存在: {updated_path}")
+                return
+
+            # 重命名目录
+            config = load_config()  # 加载现有配置
+            os.rename(original_path, updated_path)
+            courts_page.local_folder = updated_path  
+            config["local_folder"] = updated_path # 更新记录的路径
+            save_config(config)
+            print(f"路径已更新: {original_path} -> {updated_path}")
+        else:
+            print("路径无需更新，当前路径与目标路径一致")
+
+    except Exception as e:
+        messagebox.showerror("错误", f"操作失败: {str(e)}")
 
 # 切换开关
-def toggle_onoff(root,courts_page):
-    global toggle_state,toggle_button
-    toggle_state.set(not toggle_state.get()),
-    toggle_button.config(text="开启" if toggle_state.get() else "关闭"),
-    toggle_action(toggle_state,courts_page)
+def toggle_onoff(root, courts_page):
+    global toggle_state, toggle_button
+
+    # 切换开关状态
+    toggle_state.set(not toggle_state.get())
+    print(f"开关状态已切换为: {'开启' if toggle_state.get() else '关闭'}")
+
+    # 更新按钮文本
+    toggle_button.config(text="开启" if toggle_state.get() else "关闭")
+
+    # 调用 toggle_action 更新路径
+    toggle_action(toggle_state, courts_page)
 
     # 创建顶级窗口，用于显示消息
     click_label_window = tk.Toplevel(root)
@@ -107,7 +143,6 @@ def toggle_onoff(root,courts_page):
 
     # 调用淡出功能
     fade_out_label(click_label_window)
-    # print(f"开关操作 {'开启' if toggle_state.get() else '关闭'}")
 
 def move_left(root,courts_page):
     switch_selection(root,courts_page,-1)
@@ -427,7 +462,7 @@ def display_courts_page(courts_page):
     # 选择替换路径按钮
     select_balls_button = tk.Button(
         button_frame,
-        text="选择球场替换路径",
+        text="选择插件路径",
         command=lambda: select_folder(courts_page,"replace"),
         bg="#55A037",
         relief="ridge"
@@ -436,7 +471,7 @@ def display_courts_page(courts_page):
     # 选择本地路径按钮
     local_courts_button = tk.Button(
         button_frame,
-        text="选择本地球场路径",
+        text="选择mods路径",
         command=lambda: select_folder(courts_page,"local"),
         bg="#FF8017",
         relief="ridge"
