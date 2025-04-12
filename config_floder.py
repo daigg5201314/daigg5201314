@@ -2,7 +2,7 @@ import os
 from ttkbootstrap.constants import *
 import sys
 import json
-
+from debug_utils import debug_print
 
 CONFIG_FILE = "config.json"
 def save_default_config(config_path):
@@ -12,13 +12,14 @@ def save_default_config(config_path):
         "shortcut_onoff": "alt+r",
         "shortcut_left": "-",
         "shortcut_right": "=",
-        "local_folder": "",
-        "balls_folder": "",
-        "courts_folder": "",
+        "local_folder": "D:/xxxx/mods/levels",
+        "balls_folder": "D:/xxxx/mods/balls",
+        "jersey_folder": "D:/xxxx/mods/jersey",
+        "replace_folder": "D:/xxxx/courts",
     }
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(default_config, f, indent=4)
-    print(f"默认配置保存在 {config_path}.")
+    debug_print(f"默认配置保存在 {config_path}.")
 
 # Check resource path
 def resource_path(relative_path):
@@ -32,7 +33,7 @@ def resource_path(relative_path):
 def check_load_config():
  """检查文件是否存在"""
  config_path = resource_path(CONFIG_FILE)  # 获取配置文件路径
-#  print(f"Config file path: {config_path}")
+#  debug_print(f"Config file path: {config_path}")
  if not os.path.exists(config_path):
     try:
         # 检查文件是否为空
@@ -44,9 +45,12 @@ def check_load_config():
 def load_config():
     """加载嵌入的配置文件"""
     config_path = resource_path(CONFIG_FILE)  # 获取配置文件路径
-    # print(f"文件加载路径：{config_path}")
-    with open(config_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        debug_print("加载配置失败，使用空配置", e)
+        return {}
 
 def save_config(config):
     """保存配置到文件"""
@@ -54,7 +58,7 @@ def save_config(config):
     try:
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
-        print("配置已经保存.")
+        debug_print("配置已经保存.")
     except Exception as e:
-        print(f"Error saving config: {e}")
+        debug_print("保存配置失败", e)
 

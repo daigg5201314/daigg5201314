@@ -1,4 +1,5 @@
 import os
+import stat
 import shutil
 import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
@@ -13,16 +14,25 @@ import re
 import json
 import ctypes
 from config_floder import check_load_config,load_config,save_config
+from debug_utils import debug_print
+
 can_copy = True  # 默认允许点击
 image_display_frame = None
 image_labels = {} # 全局字典用于存储图片标签
 current_index = -1 # 初始状态，没有图片被选中
+feedback_window = None # 定义全局反馈窗口变量
+
+# 如果全局未定义 image_cache，则初始化
+try:
+    image_cache
+except NameError:
+    image_cache = {}
 
 def disable_ui_elements(courts_page):
     """禁用球场框架中除“开启/关闭”按钮外的其他按钮"""
     global can_copy
     can_copy = False  # 禁止点击图片
-    print("球场框架已禁用，图片点击行为被禁止")
+    debug_print("球场框架已禁用，图片点击行为被禁止")
     if hasattr(courts_page, "button_frame") and courts_page.button_frame:  # 检查 button_frame 是否存在
         for child in courts_page.button_frame.winfo_children():  # 遍历 button_frame 内的所有组件
             if isinstance(child, tk.Button) and child.cget("text") not in ["开启", "关闭"]:
@@ -34,7 +44,7 @@ def enable_ui_elements(courts_page):
     """启用按钮和界面"""
     global can_copy
     can_copy = True  # 恢复点击图片
-    print("球场框架已启用，图片点击行为恢复")
+    debug_print("球场框架已启用，图片点击行为恢复")
     if hasattr(courts_page, "button_frame") and courts_page.button_frame:  # 检查 button_frame 是否存在
         for child in courts_page.button_frame.winfo_children():  # 启用 button_frame 内的所有组件
             if isinstance(child, tk.Button):
@@ -48,36 +58,22 @@ def rename_folder(courts_package,original_path, updated_path):
     try:
         os.rename(original_path, updated_path)
         courts_package.local_folder = updated_path
-        print(f"路径成功修改为：{updated_path}")
+        debug_print(f"路径成功修改为：{updated_path}")
     except OSError as e:
-        # print(f"重命名路径失败：{e}")
+        # debug_print(f"重命名路径失败：{e}")
         messagebox.showwarning("重命名失败", f"重命名路径失败：{e}")
 
 def toggle_action(toggle_state, courts_page):
     """
     根据开关状态切换路径并控制界面交互。
     """
-    # 检查路径是否存在
-    if not hasattr(courts_page, "local_folder") or not courts_page.local_folder:
-        messagebox.showwarning("路径错误", "请先选择球场路径！")
-        return
 
     original_path = courts_page.local_folder
-    print(f"传入的路径: {original_path}")
-
-    # 检查路径是否存在
-    if not os.path.exists(original_path):
-        messagebox.showerror("路径错误", "路径不存在，请重新选择！")
-        return
+    debug_print(f"传入的路径: {original_path}")
 
     # 提取父目录和当前目录名
     parent_dir = os.path.dirname(original_path)
     current_dir = os.path.basename(original_path)
-
-    # 检查当前目录名是否以 "levels" 开头
-    if not current_dir.startswith("levels"):
-        messagebox.showerror("路径错误", "路径的末尾目录名必须包含 'levels'！")
-        return
 
     try:
         # 根据开关状态生成目标目录名
@@ -90,67 +86,76 @@ def toggle_action(toggle_state, courts_page):
         if current_dir != target_dir:
             updated_path = os.path.join(parent_dir, target_dir)
 
-            # 确保目标路径不存在（否则重命名会失败）
+            # 如果目标路径已存在，则更新 local_folder 指向目标路径并保存配置
             if os.path.exists(updated_path):
-                messagebox.showerror("路径冲突", f"目标路径已存在: {updated_path}")
+                courts_page.local_folder = updated_path
+                config = load_config()
+                config["local_folder"] = updated_path
+                save_config(config)
+                debug_print(f"目标路径已存在，直接使用现有路径: {updated_path}")
                 return
 
-            # 重命名目录
+            # 否则，进行重命名
             config = load_config()  # 加载现有配置
             os.rename(original_path, updated_path)
             courts_page.local_folder = updated_path  
-            config["local_folder"] = updated_path # 更新记录的路径
+            config["local_folder"] = updated_path  # 更新记录的路径
             save_config(config)
-            print(f"路径已更新: {original_path} -> {updated_path}")
+            debug_print(f"路径已更新: {original_path} -> {updated_path}")
         else:
-            print("路径无需更新，当前路径与目标路径一致")
+            debug_print("路径无需更新，当前路径与目标路径一致")
 
     except Exception as e:
         messagebox.showerror("错误", f"操作失败: {str(e)}")
 
 # 切换开关
 def toggle_onoff(root, courts_page):
+    """# 切换开关状态（这一步可以直接在当前线程更新变量）"""
     global toggle_state, toggle_button
+    new_state = not toggle_state.get()
+    toggle_state.set(new_state)
+    debug_print(f"开关状态已切换为: {'开启' if toggle_state.get() else '关闭'}")
+    
+    # 将所有 tkinter 操作放入主线程调用
+    root.after(0, lambda: (
+        toggle_button.config(text="开启" if toggle_state.get() else "关闭"),
+        toggle_action(toggle_state, courts_page),
+        show_feedback(root, f"开关操作:{'开启' if toggle_state.get() else '关闭'}")
+    ))
 
-    # 切换开关状态
-    toggle_state.set(not toggle_state.get())
-    print(f"开关状态已切换为: {'开启' if toggle_state.get() else '关闭'}")
+def show_feedback(root, message):
+    """显示反馈信息，并执行淡出效果"""
+    global feedback_window
+    # 如果已有窗口，则先销毁
+    if feedback_window is not None:
+        feedback_window.destroy()
+    feedback_window = tk.Toplevel(root)
+    feedback_window.overrideredirect(True)      # 去掉窗口边框
+    feedback_window.attributes("-topmost", True)  # 保持置顶
+    feedback_window.geometry("+0+0")              # 固定在屏幕左上角
 
-    # 更新按钮文本
-    toggle_button.config(text="开启" if toggle_state.get() else "关闭")
-
-    # 调用 toggle_action 更新路径
-    toggle_action(toggle_state, courts_page)
-
-    # 创建顶级窗口，用于显示消息
-    click_label_window = tk.Toplevel(root)
-    click_label_window.overrideredirect(True)  # 去掉窗口边框
-    click_label_window.attributes("-topmost", True)  # 窗口置顶
-    click_label_window.geometry("+0+0")  # 设置位置为屏幕左上角
-
-    # 在顶级窗口中添加标签
-    click_label = tk.Label(
-        click_label_window,
-        text=f"开关操作:{'开启' if toggle_state.get() else '关闭'}",
-        bg="#4CAF50",
+    label = tk.Label(
+        feedback_window,
+        text=message,
+        bg="#E60000",
         fg="white",
         font=("楷体", 30, "bold"),
         relief="solid",
         padx=30,
         pady=15
     )
-    click_label.pack()
+    label.pack()
 
-    # 调用淡出功能
-    fade_out_label(click_label_window)
+    # 调用淡出效果，初始透明度为3.0
+    fade_out_label(feedback_window)
 
 def move_left(root,courts_page):
     switch_selection(root,courts_page,-1)
-    print("左移操作")
+    debug_print("左移操作")
 
 def move_right(root,courts_page):
     switch_selection(root,courts_page,1)
-    print("右移操作")
+    debug_print("右移操作")
 
 def select_folder(courts_page,folder_type):
     """
@@ -165,31 +170,38 @@ def select_folder(courts_page,folder_type):
             courts_page.replace_folder = selected_folder
             config["replace_folder"] = selected_folder
             process_replace_courts_files(courts_page)  # 处理替换球场的逻辑
-            print(f"Courts folder selected: {selected_folder}")
+            debug_print(f"Courts folder selected: {selected_folder}")
 
         elif folder_type == "local":
             courts_page.local_folder = selected_folder
             config["local_folder"] = selected_folder
             process_local_courts_files(courts_page)  # 处理本地球场的逻辑
-            print(f"Local folder selected: {selected_folder}")
+            debug_print(f"Local folder selected: {selected_folder}")
 
         save_config(config)  # 保存更新的配置
     else:
-        print(f"No folder selected for {folder_type} files.")
+        debug_print(f"No folder selected for {folder_type} files.")
 
 def process_replace_courts_files(courts_page):
-    print("Processing process_replace_court files...")
+    debug_print("Processing process_replace_court files...")
 
 def process_local_courts_files(courts_page):
-    """显示球场页面，并加载本地球场路径的图片"""
+    """更新本地球场页面，并加载本地球场路径的图片，不重新创建显示页面"""
     global image_display_frame
-
-    # 图片显示框架
-    image_display_frame = tk.Frame(courts_page, bg="white")
-    image_display_frame.pack(fill="both", expand=True, pady=10, padx=10)
-
+    # 如果全局的 image_display_frame 已存在且有效，清空其子组件，否则创建新的 Frame
+    if image_display_frame is None or not image_display_frame.winfo_exists():
+        image_display_frame = tk.Frame(courts_page, bg="white")
+        image_display_frame.pack(fill="both", expand=True, pady=10, padx=10)
+    else:
+        # 清空显示框中的所有组件，释放原有控件资源
+        for widget in image_display_frame.winfo_children():
+            widget.destroy()
     # 调用模块 1: 加载并显示图片
-    display_court_images(courts_page,image_display_frame)
+    display_court_images(courts_page, image_display_frame)
+    # ✅ 新增：路径验证和同步 toggle 状态
+    validate_local_folder(courts_page)
+    # ✅ 同步更新按钮文本
+    toggle_button.config(text="开启" if toggle_state.get() else "关闭")
 
 def switch_selection(root,courts_page,direction):
     """切换选项"""
@@ -232,95 +244,107 @@ def highlight_current_option(root,courts_page):
         # 自动模拟点击事件
         handle_image_click(root,courts_page,folder_path)
 
-def display_court_images(courts_page,image_display_frame):
-    """显示球场页面并加载本地球场路径的图片"""
-    global court_images, image_labels, folder_paths
+def load_image_cached(file_path):
+    """
+    尝试从缓存中读取图片，如果未加载则打开图片、生成缩略图、生成 PhotoImage 对象，
+    并保存到缓存中。返回 PhotoImage 对象或 None。
+    """
+    global image_cache
+    if file_path in image_cache:
+        return image_cache[file_path]
+    try:
+        image = Image.open(file_path).convert("RGB")
+        image.thumbnail((180, 200))  # 设定缩略图大小
+        img = ImageTk.PhotoImage(image)
+        image.close()  # 关闭打开的文件句柄
+        image_cache[file_path] = img
+        return img
+    except Exception as e:
+        debug_print(f"Failed to load image {file_path}: {e}")
+        return None
 
-    # 清空旧的图像资源
-    for label in image_labels.values():
-        label.image = None  # 释放图片资源
+def display_court_images(courts_page, image_display_frame):
+    """显示球场页面并加载本地球场路径的图片，采用缓存策略优化加载速度和资源占用"""
+    global court_images, image_labels, folder_paths, image_cache
 
-    # 清空旧内容和全局变量
-    court_images = []  # 用于存储球场图片和路径
-    image_labels = {}  # 清空标签字典
-    folder_paths = {}  # 保存文件夹路径用于复制操作
+    # 重置图片、标签和文件夹路径的数据结构
+    court_images = []   # 存储 (文件名, PhotoImage 对象, 对应文件夹)
+    image_labels = {}   # 按图片名称保存 Label 控件（用于后续高亮更新）
+    folder_paths = {}   # 记录每个文件对应的文件夹路径
     image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
 
+    # 判断目标文件夹是否存在
     if hasattr(courts_page, 'replace_folder') and os.path.isdir(courts_page.replace_folder):
+        # 遍历替换文件夹下的子文件夹中的图片文件
         for folder_name in os.listdir(courts_page.replace_folder):
             folder_path = os.path.join(courts_page.replace_folder, folder_name)
             if os.path.isdir(folder_path):
                 for file_name in os.listdir(folder_path):
                     file_path = os.path.join(folder_path, file_name)
                     if file_name.lower().endswith(image_extensions):
-                        try:
-                            image = Image.open(file_path).convert("RGB")
-                            image.thumbnail((180, 200))  # 缩略图大小
-                            img = ImageTk.PhotoImage(image)
+                        img = load_image_cached(file_path)
+                        if img is not None:
                             court_images.append((file_name, img, folder_path))
                             folder_paths[file_name] = folder_path
-                        except Exception as e:
-                            print(f"Failed to load image {file_path}: {e}")
 
-        # 打印 court_images 的内容和个数
-        print(f"Total images in court_images: {len(court_images)}")
+        debug_print(f"Total images in court_images: {len(court_images)}")
         for idx, (court_file, img, folder_path) in enumerate(court_images):
-            print(f"Image {idx + 1}: {court_file}, Folder: {folder_path}")
-        
-        # 清空显示框中的所有组件
+            debug_print(f"Image {idx + 1}: {court_file}, Folder: {folder_path}")
+
+        # 清空显示区域中的所有旧控件
         for widget in image_display_frame.winfo_children():
             widget.destroy()
 
-        # 创建图片和标签的显示
+        # 创建一个容器 Frame，并设置布局自适应
         image_frame = tk.Frame(image_display_frame, bg="white")
-        image_frame.grid(row=0, column=0, sticky="nsew")  # 使用 grid 布局
-
-        # 为 grid 布局设置列和行的权重，确保显示区域自适应
+        image_frame.grid(row=0, column=0, sticky="nsew")
         image_display_frame.grid_rowconfigure(0, weight=1)
         image_display_frame.grid_columnconfigure(0, weight=1)
 
+        # 遍历 court_images 动态创建图片显示控件
         for idx, (court_file, img, folder_path) in enumerate(court_images):
             row_num = idx // 3
             col_num = idx % 3
-            print(f"row_num={row_num},col_num={col_num}")
+            debug_print(f"row_num={row_num}, col_num={col_num}")
             frame = tk.Frame(image_frame, bg="white", padx=5, pady=5)
-            frame.grid(row=row_num, column=col_num, sticky="nsew")  # 使用 grid 布局
+            frame.grid(row=row_num, column=col_num, sticky="nsew")
 
-            # 显示图片
+            # 图片控件
             img_label = tk.Label(frame, image=img, bg="white", cursor="hand2")
-            img_label.image = img  # 防止垃圾回收
+            img_label.image = img  # 防止图片被垃圾回收
             img_label.pack()
+            # 注意：lambda 中的参数默认值会捕获当前 folder_path
             img_label.bind(
                 "<Button-1>",
-                lambda event, src=folder_path: handle_image_click(courts_page,src)
+                lambda event, src=folder_path, rt=courts_page.master: handle_image_click(rt, courts_page, src)
             )
 
-            # 显示名称（去掉后缀）
+            # 文件名标签（去除扩展名）
             file_name_without_ext = os.path.splitext(court_file)[0]
             name_label = tk.Label(frame, text=file_name_without_ext, bg="white", font=("楷体", 10))
             name_label.pack()
 
-            # 将标签存入全局字典
+            # 将标签存入全局字典（用于后续高亮匹配更新）
             image_labels[file_name_without_ext] = name_label
 
-        # 加载完成后高亮匹配的标签
+        # 调用高亮函数，更新匹配标签的样式
         highlight_matching_images(courts_page)
-
     else:
-        print("No valid folder selected or folder does not exist.")
+        debug_print("No valid folder selected or folder does not exist.")
+        for widget in image_display_frame.winfo_children():
+            widget.destroy()
         tk.Label(
             image_display_frame,
             text="请先选择本地球场路径以加载图片。",
             bg="white",
             fg="red"
         ).pack(pady=20)
-
     image_display_frame.update_idletasks()
 
 def handle_image_click(root,courts_page,src_folder):
     """处理图片点击事件并复制内容"""
     if not can_copy:
-        print("图片点击行为已被禁用")
+        debug_print("图片点击行为已被禁用")
         return
 
     if hasattr(courts_page, "local_folder") and courts_page.local_folder:
@@ -328,7 +352,7 @@ def handle_image_click(root,courts_page,src_folder):
         highlight_matching_images(courts_page)
         show_copy_feedback(root,src_folder)
     else:
-        print("目标路径未设置，请先选择球场替换路径！")
+        debug_print("目标路径未设置，请先选择球场替换路径！")
         messagebox.showwarning("路径错误", "请先选择球场替换路径！")
 
 def show_copy_feedback(root,src_folder):
@@ -363,26 +387,26 @@ def fade_out_label(window, alpha=3.0):
 
 def delete_existing_files(dest_folder):
     """删除目标文件夹中指定的文件"""
-    # 定义需要检查并删除的文件名模式
     files_to_delete = [
         "arena_blacktop_ext.iff",
         "arena_blacktop_ext_floor.iff"
     ]
-    # 定义需要删除的图片扩展名
     image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
-
-    # 遍历文件夹内容，删除匹配的文件
-    try:
-        for item in os.listdir(dest_folder):
-            item_path = os.path.join(dest_folder, item)
+    
+    for item in os.listdir(dest_folder):
+        item_path = os.path.join(dest_folder, item)
+        try:
+            # 如果是只读文件，先修改权限（例如777是完全权限）
+            if os.path.isfile(item_path):
+                os.chmod(item_path, stat.S_IWRITE)
             if os.path.isfile(item_path) and item in files_to_delete:
-                os.remove(item_path)  # 删除文件
-                print(f"Deleted {item} from {dest_folder}")
-            elif item.lower().endswith(image_extensions):  # 删除图片文件
                 os.remove(item_path)
-                print(f"Deleted {item} from {dest_folder}")
-    except Exception as e:
-        print(f"Error deleting files: {e}")
+                debug_print(f"Deleted {item} from {dest_folder}")
+            elif item.lower().endswith(image_extensions):
+                os.remove(item_path)
+                debug_print(f"Deleted {item} from {dest_folder}")
+        except Exception as e:
+            debug_print(f"Error deleting file {item_path}: {e}")
 
 def copy_folder_contents(src_folder, dest_folder):
     """将源文件夹中的内容复制到目标文件夹，不包括源文件夹本身"""
@@ -401,7 +425,7 @@ def copy_folder_contents(src_folder, dest_folder):
             else:
                 shutil.copy2(src_path, dest_path)
 
-        print(f"Copied contents from {src_folder} to {dest_folder}")
+        debug_print(f"Copied contents from {src_folder} to {dest_folder}")
     except Exception as e:
         messagebox.showerror("Error", f"Failed to copy file: {e}")
 
@@ -410,7 +434,7 @@ def highlight_matching_images(courts_page):
     global current_index
     # 检查 replace_folder 属性是否存在且有效
     if not hasattr(courts_page, "local_folder") or not courts_page.local_folder or not os.path.isdir(courts_page.local_folder):
-        print("目标路径未设置或无效，跳过高亮逻辑。")
+        debug_print("目标路径未设置或无效，跳过高亮逻辑。")
         return
 
     # 获取目标文件夹中的所有图片名称（去掉扩展名）
@@ -428,61 +452,88 @@ def highlight_matching_images(courts_page):
         else:
             label.config(bg="white", font=("楷体", 10))
 
+def validate_local_folder(courts_page):
+    """
+    校验配置中读取的 local_folder 路径，并自动设置 toggle 状态
+    """
+    global toggle_state
+
+    folder = courts_page.local_folder
+    if not folder or not os.path.exists(folder):
+        messagebox.showwarning("路径无效", "配置文件中的 mods 路径不存在，请重新选择！")
+        return
+
+    dir_name = os.path.basename(folder)
+    if "levels" not in dir_name:
+        messagebox.showwarning("路径错误", "路径名必须包含 'levels'，请重新选择正确路径！")
+        return
+
+    if dir_name == "levels":
+        toggle_state.set(True)
+    elif dir_name == "levels_stop":
+        toggle_state.set(False)
+    else:
+        messagebox.showwarning("路径异常", f"路径名称应为 'levels' 或 'levels_stop'，当前为: {dir_name}")
+
 def display_courts_page(courts_page):
-    global toggle_state,toggle_button
+    global toggle_state, toggle_button
+
+    debug_print(f"来到球场界面")
+
+    # 清空页面已有内容，防止重复加载
+    for widget in courts_page.winfo_children():
+        widget.destroy()
+
     # 按钮布局框架
     button_frame = tk.Frame(courts_page, bg="white")
-    button_frame.pack(side='top',fill="x",padx=10,pady=10)  # 使用 grid 布局
-    print(f"来到球场界面")
-    # # 加载配置文件
-    config = load_config()
+    button_frame.pack(side='top', fill="x", padx=10, pady=10)
 
-    # 初始化路径
+    # 读取配置并设置路径
+    config = load_config()
     courts_page.replace_folder = config.get("replace_folder", "")
     courts_page.local_folder = config.get("local_folder", "")
 
-    # 开关level按钮
-    toggle_state = tk.BooleanVar(value=True)  # 初始状态为打开
-    toggle_action(toggle_state,courts_page)
+    # 初始化开关
+    toggle_state = tk.BooleanVar()
+    validate_local_folder(courts_page)  # 根据路径设置 toggle 状态
+
+    # ✅ 创建 toggle 按钮（状态已由上面更新）
     toggle_button = tk.Button(
-    button_frame,
-    text="开启",
-    command=lambda: [
-        toggle_state.set(not toggle_state.get()),
-        toggle_button.config(text="开启" if toggle_state.get() else "关闭"),
-        toggle_action(toggle_state,courts_page)
-    ],
-    bg="#4CAF50",
+        button_frame,
+        text="开启" if toggle_state.get() else "关闭",
+        command=lambda: [
+            toggle_state.set(not toggle_state.get()),
+            toggle_button.config(text="开启" if toggle_state.get() else "关闭"),
+            toggle_action(toggle_state, courts_page)
+        ],
+        bg="#4CAF50",
         fg="white",
         relief="flat",
         font=("Arial", 10, "bold"),
         activebackground="#45a049"
     )
-    toggle_button.pack(side='left', padx=10, pady=10)  # 使用 pack 布局放置第一个按钮（左对齐）
-    # 选择替换路径按钮
+    toggle_button.pack(side='left', padx=10, pady=10)
+
+    # 替换路径按钮
     select_balls_button = tk.Button(
         button_frame,
-        text="选择插件路径",
-        command=lambda: select_folder(courts_page,"replace"),
+        text="选择街球场路径",
+        command=lambda: select_folder(courts_page, "replace"),
         bg="#55A037",
         relief="ridge"
     )
-    select_balls_button.pack(side='left', padx=10, pady=10, expand=True)  # 第二个按钮占据剩余空间，并居中
-    # 选择本地路径按钮
+    select_balls_button.pack(side='left', padx=10, pady=10, expand=True)
+
+    # 本地 levels 路径按钮
     local_courts_button = tk.Button(
         button_frame,
-        text="选择mods路径",
-        command=lambda: select_folder(courts_page,"local"),
+        text="选择levels路径",
+        command=lambda: select_folder(courts_page, "local"),
         bg="#FF8017",
         relief="ridge"
     )
-    local_courts_button.pack(side='right', padx=10, pady=10)  # 使用 pack 布局放置第三个按钮（右对齐）
+    local_courts_button.pack(side='right', padx=10, pady=10)
 
-    #打印加载的路径并处理
-    if courts_page.replace_folder:
-        print(f"从配置加载的替换文件夹: {courts_page.replace_folder}")
-        process_replace_courts_files(courts_page)  # 如果路径存在，直接处理球场文件
-
-    if courts_page.local_folder:
-        print(f"从配置加载的本地文件夹: {courts_page.local_folder}")
-        process_local_courts_files(courts_page)  # 如果路径存在，直接处理本地球场文件
+    # ❗✅ 页面只加载控件，**不主动执行路径控制逻辑**
+    # 不再执行 toggle_action / process_local_courts_files 自动逻辑
+    # 保证页面切换时是纯展示，行为留给用户操作或 create_ui 控制

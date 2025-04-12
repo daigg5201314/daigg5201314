@@ -1,9 +1,11 @@
 {
-    "shortcut_windows": "alt+r",
-    "shortcut_onoff": "alt+h",
+    "shortcut_windows": "alt+h",
+    "shortcut_onoff": "alt+q",
     "shortcut_left": "-",
     "shortcut_right": "=",
-    "balls_folder": "D:/example/balls",
-    "local_folder": "D:/test/daigg5201314/mods/levels",
-    "replace_folder": "D:/test/daigg5201314/courts"
+    "local_folder": "D:/test/daigg5201314/mods\\levels_stop",
+    "balls_folder": "D:/xxxx/mods/balls",
+    "jersey_folder": "D:/xxxx/mods/jersey",
+    "replace_folder": "D:/test/daigg5201314/courts",
+    "debug_mode": false
 }
