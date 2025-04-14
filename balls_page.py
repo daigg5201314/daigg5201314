@@ -15,6 +15,7 @@ import ctypes
 from debug_utils import debug_print
 
 def display_balls_page(balls_page):
+    debug_print("来到篮球界面")
     # 清空界面（防止重复加载时控件堆叠）
     for widget in balls_page.winfo_children():
         widget.destroy()
@@ -28,3 +29,7 @@ def display_balls_page(balls_page):
         bg="white"
     )
     message_label.place(relx=0.5, rely=0.5, anchor="center")
+
+def switch_to_balls_page(balls_page):
+    debug_print("切换到篮球界面")
+    display_balls_page(balls_page)

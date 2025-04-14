@@ -1,5 +1,5 @@
 import logging
-DEBUG_MODE = False  # ✅ 设置为 False 可关闭所有日志打印（适用于正式固件）
+DEBUG_MODE = True  # ✅ 设置为 False 可关闭所有日志打印（适用于正式固件）
 
 # 创建全局 logger
 logger = logging.getLogger("app")

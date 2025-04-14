@@ -6,14 +6,9 @@ from tkinter import messagebox, filedialog, ttk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from PIL import Image, ImageTk
-import sys
-import threading
 import keyboard
 from collections import OrderedDict
-import re
-import json
-import ctypes
-from config_floder import check_load_config,load_config,save_config
+from config_floder import load_config,load_default_config,save_config
 from debug_utils import debug_print
 
 can_copy = True  # 默认允许点击
@@ -488,14 +483,8 @@ def display_courts_page(courts_page):
     button_frame = tk.Frame(courts_page, bg="white")
     button_frame.pack(side='top', fill="x", padx=10, pady=10)
 
-    # 读取配置并设置路径
-    config = load_config()
-    courts_page.replace_folder = config.get("replace_folder", "")
-    courts_page.local_folder = config.get("local_folder", "")
-
     # 初始化开关
     toggle_state = tk.BooleanVar()
-    validate_local_folder(courts_page)  # 根据路径设置 toggle 状态
 
     # ✅ 创建 toggle 按钮（状态已由上面更新）
     toggle_button = tk.Button(
@@ -514,7 +503,7 @@ def display_courts_page(courts_page):
     )
     toggle_button.pack(side='left', padx=10, pady=10)
 
-    # 替换路径按钮
+    # 替换 mods 路径按钮
     select_balls_button = tk.Button(
         button_frame,
         text="选择街球场路径",
@@ -537,3 +526,33 @@ def display_courts_page(courts_page):
     # ❗✅ 页面只加载控件，**不主动执行路径控制逻辑**
     # 不再执行 toggle_action / process_local_courts_files 自动逻辑
     # 保证页面切换时是纯展示，行为留给用户操作或 create_ui 控制
+
+def switch_to_courts_page(courts_farme):
+    """
+    切换到球场页面并进行资源加载：
+      - 若 local_folder 存在且不是默认路径，则进行文件验证、UI状态切换和资源处理；
+      - 若检测到使用默认路径，则认为是首次打开软件，不进行资源加载，提示用户配置正确路径；
+      - 最后切换显示页面。
+    """
+    # 创建状态变量
+    toggle_state = tk.BooleanVar()
+    config = load_default_config()
+    # 检查 local_folder 是否存在
+    if getattr(courts_farme, "local_folder", None):
+        # 判断是否仍为默认路径
+        if courts_farme.local_folder == config.get("local_folder", ""):
+            # 用户首次打开软件使用默认路径，不进行资源加载
+            debug_print("检测到默认路径，首次打开软件，跳过资源加载。")
+            messagebox.showinfo("提示", "您当前使用的是默认存储路径，请先设置正确的球场资源存储路径再进行加载。")
+        else:
+            # 尝试资源加载
+            try:
+                validate_local_folder(courts_farme)
+                toggle_action(toggle_state, courts_farme)
+                process_local_courts_files(courts_farme)
+            except Exception as e:
+                debug_print("资源加载遇到问题:", e)
+                messagebox.showerror("错误", f"资源加载失败: {e}")
+    else:
+        debug_print("未配置 local_folder，跳过资源加载")
+        messagebox.showwarning("警告", "未配置存储路径，请检查设置。")

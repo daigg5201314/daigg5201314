@@ -1,17 +1,9 @@
-import os
-import shutil
 import tkinter as tk
 from tkinter import messagebox, filedialog, ttk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from PIL import Image, ImageTk
-import sys
-import threading
-import keyboard
 from collections import OrderedDict
-import re
-import json
-import ctypes
 from debug_utils import debug_print
 
 def display_jersey_page(jersey_page):
@@ -30,3 +22,7 @@ def display_jersey_page(jersey_page):
         bg="white"
     )
     message_label.place(relx=0.5, rely=0.5, anchor="center")
+
+def switch_to_jersey_page(jersey_page):
+    debug_print("切换到球衣界面")
+    display_jersey_page(jersey_page)

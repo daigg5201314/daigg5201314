@@ -10,9 +10,12 @@ import threading
 import keyboard
 import json
 from collections import OrderedDict
+import courts_page
 import balls_page
-from courts_page import toggle_onoff,move_left,move_right,display_courts_page,validate_local_folder,toggle_action,process_local_courts_files
 import jersey_page
+from courts_page import toggle_onoff,move_left,move_right,display_courts_page,validate_local_folder,toggle_action,process_local_courts_files
+from balls_page import display_balls_page,switch_to_balls_page  
+from jersey_page import display_jersey_page,switch_to_jersey_page
 from config_floder import check_load_config,load_config,save_config
 from debug_utils import debug_print,set_debug
 
@@ -43,7 +46,7 @@ def switch_page(page_type):
     page_info = pages.get(page_type)
     if page_info:
         # 可选：如果需要每次切换时刷新内容，可以调用其 display 方法
-        # page_info["display"](page_info["frame"])
+        page_info["display"](page_info["frame"])
         page_info["frame"].tkraise()
     else:
         debug_print(f"未知页面类型: {page_type}")
@@ -268,7 +271,7 @@ def open_settings():
 
 # 创建主窗口
 def create_ui():
-    global root, balls_farme, courts_farme, jersey_farme, toggle_state, pages
+    global root, balls_farme, courts_farme, jersey_farme, pages
 
     root = tk.Tk()
     root.title("篮球资源管理器")
@@ -306,25 +309,18 @@ def create_ui():
 
     # 初始化页面 UI（各 display 函数只负责填充内容，不做 tkraise 操作）
     balls_page.display_balls_page(balls_farme)
-    display_courts_page(courts_farme)
     jersey_page.display_jersey_page(jersey_farme)
+    courts_page.display_courts_page(courts_farme)
 
     # 构建统一页面管理字典
     pages = {
-        "balls": {"frame": balls_farme, "display": balls_page.display_balls_page},
-        "courts": {"frame": courts_farme, "display": display_courts_page},
-        "jersey": {"frame": jersey_farme, "display": jersey_page.display_jersey_page},
+        "balls": {"frame": balls_farme, "display": balls_page.switch_to_balls_page},
+        "courts": {"frame": courts_farme, "display": courts_page.switch_to_courts_page},
+        "jersey": {"frame": jersey_farme, "display": jersey_page.switch_to_jersey_page},
     }
 
     # 默认显示球场页面
     switch_page("courts")
-
-    # 初始化 toggle 状态等：如果 courts_farme.local_folder 存在则进行验证与资源加载
-    toggle_state = tk.BooleanVar()
-    if courts_farme.local_folder:
-        validate_local_folder(courts_farme)
-        toggle_action(toggle_state, courts_farme)
-        process_local_courts_files(courts_farme)
 
     # 注册快捷键
     hotkeys = {
