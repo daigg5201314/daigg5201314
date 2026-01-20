@@ -1,129 +1,514 @@
-import os
-import shutil
 import tkinter as tk
-from tkinter import filedialog, messagebox
-from tkinter import ttk
+from tkinter import ttk, filedialog
+import re
+import os
 
-def extract_values_from_scne(input_file_path, key):
-    extracted_values = []
-    with open(input_file_path, 'r', encoding='utf-8') as file:
-        for line in file:
-            if key in line:
-                # 提取值，假设格式为 "key": "value"
-                parts = line.split(':')
-                if len(parts) > 1:
-                    value = parts[1].strip().strip('",')
-                    extracted_values.append(value)
-                    # print(f"提取到: {key} -> {value}")  # 打印提取的值
-    return extracted_values
+# =========================
+# 全局状态（回撤 & 高亮）
+# =========================
 
-def clean_extension(value):
-    extensions = [".tld", ".bin", ".shader", ".gz", ".script"]
-    for ext in extensions:
-        if value.endswith(ext):
-            return value[:-len(ext)]  # 去掉后缀
-    return value
+last_added_paths = []
+undo_stack = []
+full_tree_data = None   # 保存完整 SCNE 结构
+# =========================
+# SCNE 结构解析（仅结构）
+# =========================
 
-def copy_files_with_prefix(source_folder, destination_folder, prefixes):
-    if not os.path.exists(destination_folder):
-        os.makedirs(destination_folder)
+def parse_scne_structure(scne_path):
+    root = {}
+    stack = [root]
+    pattern = re.compile(r'"([^"]+)"\s*:\s*\{')
 
-    wait_copy_file = []
-    for filename in os.listdir(source_folder):
-        if any(prefix in filename for prefix in prefixes):
-            wait_copy_file.append(filename)
+    with open(scne_path, "r", encoding="utf-8") as f:
+        for line in f:
+            match = pattern.search(line)
+            if match:
+                key = match.group(1)
+                node = {}
+                stack[-1][key] = node
+                stack.append(node)
+            elif "}" in line and len(stack) > 1:
+                stack.pop()
+    return root
 
-    return wait_copy_file
 
-def clear_destination_folder(destination_folder):
-    if os.path.exists(destination_folder):  # 确保目标文件夹存在
-        for filename in os.listdir(destination_folder):
-            file_path = os.path.join(destination_folder, filename)
-            try:
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print(f"删除文件 {file_path} 时出错: {e}")
+def build_tree(parent, data):
+    for key, value in data.items():
+        full = get_tree_path(parent) + "/" + key
+        tag = "new" if full in last_added_paths else ""
+        node = tree.insert(parent, "end", text=key, tags=(tag,))
+        build_tree(node, value)
+
+
+def get_tree_path(item):
+    parts = []
+    while item:
+        parts.insert(0, tree.item(item, "text"))
+        item = tree.parent(item)
+    return "/".join(parts)
+
+def reload_tree():
+    global full_tree_data
+
+    tree.delete(*tree.get_children())
+    data = parse_scne_structure(entry.get())
+    full_tree_data = data   # ⭐ 缓存完整结构
+
+    root_node = tree.insert("", "end", text=os.path.basename(entry.get()), open=True)
+    build_tree(root_node, data)
+
+def collect_matches(data, keyword, path=()):
+    """
+    返回所有匹配节点的完整路径
+    e.g. ('arena', 'Object', 'homeShape9')
+    """
+    results = []
+    for k, v in data.items():
+        new_path = path + (k,)
+        if keyword in k.lower():
+            results.append(new_path)
+        results.extend(collect_matches(v, keyword, new_path))
+    return results
+
+def build_tree_from_paths(paths):
+    tree.delete(*tree.get_children())
+
+    root_name = os.path.basename(entry.get())
+    root = tree.insert("", "end", text=root_name, open=True)
+
+    node_map = {(): root}
+
+    for path in paths:
+        cur = ()
+        parent = root
+        for p in path:
+            cur = cur + (p,)
+            if cur not in node_map:
+                node_map[cur] = tree.insert(
+                    parent,
+                    "end",
+                    text=p,
+                    open=True   # ⭐ 强制展开
+                )
+            parent = node_map[cur]
+
+# =========================
+# 枚举识别
+# =========================
+
+enum_re = re.compile(r'^(.*?)(\d+)$')
+
+
+def analyze_enum(item):
+    name = tree.item(item, "text")
+    parent = tree.parent(item)
+
+    m = enum_re.match(name)
+    if m:
+        prefix = m.group(1)
     else:
-        print(f"目标文件夹不存在: {destination_folder}")
+        prefix = name
+
+    # ⭐ 父路径（去掉 level.SCNE 根）
+    parent_path = get_tree_path(parent).split("/")[1:]
+
+    siblings = tree.get_children(parent)
+
+    enums = []
+    for s in siblings:
+        n = tree.item(s, "text")
+        m2 = enum_re.match(n)
+        if m2 and m2.group(1) == prefix:
+            enums.append((int(m2.group(2)), n))
+        elif n == prefix:
+            enums.append((0, n))
+
+    if not enums:
+        return None, "未找到同级枚举"
+
+    enums.sort(key=lambda x: x[0])
+
+    return {
+        "prefix": prefix,
+        "parent_path": parent_path,   # ⭐ 关键
+        "max_index": enums[-1][0],
+        "template": enums[-1][1],
+    }, None
 
 
-def process_file():
-    input_file_path = entry.get()
-    if not input_file_path.endswith('.SCNE'):
-        messagebox.showerror("错误", "请选择一个 SCNE 文件")
+
+def undo():
+    global undo_stack, last_added_paths
+
+    if not undo_stack:
+        status.set("无可撤回操作")
+        detail.insert(tk.END, "❌ 无可撤回操作\n")
         return
 
-    source_folder_path = os.path.dirname(os.path.abspath(input_file_path))
-    destination_folder_path = os.path.join(source_folder_path, 'scne_export')
+    last = undo_stack.pop()
 
-    # print(f"源文件路径: {input_file_path}")
-    # print(f"源文件夹路径: {source_folder_path}")
+    with open(entry.get(), "w", encoding="utf-8") as f:
+        f.write(last["snapshot"])
 
-    # 确保目标文件夹路径有效
-    if not os.path.isdir(source_folder_path):
-        messagebox.showerror("错误", "源文件夹无效！")
+    last_added_paths = []
+    reload_tree()
+
+    # ⭐ 统一写入操作详情
+    detail.insert(tk.END, f"↩ 已撤回操作：{last['desc']}\n")
+    detail.see(tk.END)
+
+    status.set(f"已撤回：{last['desc']}")
+
+
+# =========================
+# SCNE 文本操作（核心）
+# =========================
+
+def find_block(lines, key):
+    start = None
+    depth = 0
+
+    for i, line in enumerate(lines):
+        if start is None and f'"{key}"' in line and "{" in line:
+            start = i
+            depth = 1
+            continue
+
+        if start is not None:
+            depth += line.count("{")
+            depth -= line.count("}")
+            if depth == 0:
+                return start, i
+
+    return None, None
+
+def find_block_in_parent(lines, parent_path, key):
+    """
+    只在指定 parent_path 内查找 key 对应的块
+    parent_path: ['Object', 'xxx', ...]
+    """
+    stack = []
+    start = None
+    depth = 0
+    path_idx = 0
+
+    for i, line in enumerate(lines):
+        # 进入父路径
+        if path_idx < len(parent_path):
+            if f'"{parent_path[path_idx]}"' in line and "{" in line:
+                path_idx += 1
+            continue
+
+        # 已在目标父块内，查模板
+        if start is None and f'"{key}"' in line and "{" in line:
+            start = i
+            depth = 1
+            continue
+
+        if start is not None:
+            depth += line.count("{")
+            depth -= line.count("}")
+            if depth == 0:
+                return start, i
+
+        # 离开父块
+        if path_idx == len(parent_path) and "}" in line:
+            break
+
+    return None, None
+
+def find_block_with_parent_path(lines, template_key, parent_path):
+    """
+    在整个文件中找 template_key，
+    并确认它属于指定 parent_path（向上回溯）
+    """
+    stack = []
+    stack_keys = []
+
+    for i, line in enumerate(lines):
+        # 进入新块
+        m = re.search(r'"([^"]+)"\s*:\s*\{', line)
+        if m:
+            stack.append(i)
+            stack_keys.append(m.group(1))
+
+            # ⭐ 命中模板
+            if m.group(1) == template_key:
+                # 判断父路径是否匹配
+                if stack_keys[-len(parent_path)-1:-1] == parent_path:
+                    # 找结束行
+                    depth = 1
+                    for j in range(i + 1, len(lines)):
+                        depth += lines[j].count("{")
+                        depth -= lines[j].count("}")
+                        if depth == 0:
+                            return i, j
+                # 否则继续找下一个
+        # 离开块
+        if "}" in line and stack:
+            stack.pop()
+            stack_keys.pop()
+
+    return None, None
+
+def search_tree_realtime(keyword):
+    global full_tree_data
+
+    if not full_tree_data:
         return
 
-    # 清理目标文件夹
-    clear_destination_folder(destination_folder_path)
+    keyword = keyword.strip().lower()
 
-    # 提取 "Binary" 和 "Script"
-    all_keys_and_values = []
-    binary_values = extract_values_from_scne(input_file_path, "Binary")
-    script_values = extract_values_from_scne(input_file_path, "Script")
+    # 清空 Tree
+    tree.delete(*tree.get_children())
 
-    if not binary_values and not script_values:
-        messagebox.showwarning("警告", "在 SCNE 文件中未找到对应的关键字！")
+    if not keyword:
+        # 恢复完整结构
+        root_node = tree.insert(
+            "", "end",
+            text=os.path.basename(entry.get()),
+            open=True
+        )
+        build_tree(root_node, full_tree_data)
+        status.set("搜索清空，已恢复全部结构")
         return
 
-    all_keys_and_values.extend(binary_values)
-    all_keys_and_values.extend(script_values)
+    # ⭐ 核心变化：直接收集命中路径
+    matches = collect_matches(full_tree_data, keyword)
 
-    # 去掉后缀并生成新字符串列表
-    stripped_strings = [clean_extension(value) for value in all_keys_and_values]
+    if not matches:
+        status.set(f"未找到：{keyword}")
+        return
 
-    wait_copy_files = copy_files_with_prefix(source_folder_path, destination_folder_path, stripped_strings)
-    progress['maximum'] = len(wait_copy_files)
+    build_tree_from_paths(matches)
 
-    for idx, wait_copyfile_name in enumerate(wait_copy_files):
-        source_file = os.path.join(source_folder_path, wait_copyfile_name)
-        destination_file = os.path.join(destination_folder_path, wait_copyfile_name)
-        shutil.copy(source_file, destination_file)
-        progress['value'] = idx + 1
-        copied_count_label.config(text=f"已复制文件: {idx + 1}/{len(wait_copy_files)}")
-        root.update_idletasks()
+    status.set(f"搜索命中 {len(matches)} 项：{keyword}")
 
-    messagebox.showinfo("完成", "处理完成！")
 
-    # 清空输入框
-    entry.delete(0, tk.END)
 
-# 创建主窗口
+
+def add_enum_to_scne(scne_path, parent_path, template_key, new_keys):
+    global last_added_paths
+
+    with open(scne_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    last_added_paths = []
+
+    # 1. 找模板块范围
+    t_start, t_end = find_block_with_parent_path(lines, template_key, parent_path)
+    if t_start is None:
+        raise RuntimeError("未在指定父路径中找到模板枚举块")
+
+    template_lines = lines[t_start:t_end + 1]
+    template_text = "".join(template_lines)
+
+    # 获取缩进
+    indent = re.match(r'(\s*)"', template_lines[0]).group(1)
+
+    # 2. 找插入点（模板块结束后）
+    insert_pos = t_end + 1
+
+    new_blocks = []
+
+    for new_key in new_keys:
+        block_text = template_text
+
+        # ✅ 只做“精确安全替换”
+        # 1) 外层 key
+        block_text = re.sub(
+            rf'"{re.escape(template_key)}"\s*:',
+            f'"{new_key}":',
+            block_text,
+            count=1
+        )
+
+
+        # 2) value 中引用的枚举名（如 Target / 引用字段）
+        block_text = re.sub(
+            rf'(:\s*")({re.escape(template_key)})(")',
+            lambda m: m.group(1) + new_key + m.group(3),
+            block_text
+        )
+
+
+        new_blocks.append(block_text)
+
+        last_added_paths.append(f"{parent_path}/{new_key}")
+
+    # 插入
+    lines[insert_pos:insert_pos] = new_blocks
+
+    with open(scne_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+# =========================
+# 操作入口
+# =========================
+
+def generate_and_add():
+    sel = tree.selection()
+    if not sel:
+        return
+
+    info, err = analyze_enum(sel[0])
+    detail.delete("1.0", tk.END)
+
+    if err:
+        detail.insert(tk.END, f"❌ {err}")
+        return
+
+    try:
+        count = int(enum_count.get())
+        if count <= 0:
+            raise ValueError
+    except ValueError:
+        detail.insert(tk.END, "❌ 枚举数量必须为正整数")
+        return
+
+    new_keys = [
+        f"{info['prefix']}{info['max_index'] + i + 1}"
+        for i in range(count)
+    ]
+
+    # ===== 记录撤回快照 =====
+    with open(entry.get(), "r", encoding="utf-8") as f:
+        before_text = f.read()
+
+    undo_stack.append({
+        "snapshot": before_text,
+        "desc": f"{info['template']} → 新增 {len(new_keys)} 项"
+    })
+
+    add_enum_to_scne(
+        entry.get(),
+        info["parent_path"],
+        info["template"],
+        new_keys
+    )
+
+    reload_tree()
+
+    detail.insert(tk.END, "✅ 枚举已生成并写入\n\n")
+    detail.insert(tk.END, f"模板: {info['template']}\n")
+    detail.insert(tk.END, f"新增枚举:\n")
+    for k in new_keys:
+        detail.insert(tk.END, f"  - {k}\n")
+
+    status.set(f"已新增 {len(new_keys)} 个枚举（可回撤）")
+
+# =========================
+# SCNE 加载
+# =========================
+
+def reload_tree():
+    global full_tree_data
+
+    tree.delete(*tree.get_children())
+    full_tree_data = parse_scne_structure(entry.get())
+
+    root_node = tree.insert(
+        "", "end",
+        text=os.path.basename(entry.get()),
+        open=True
+    )
+    build_tree(root_node, full_tree_data)
+
+    status.set("SCNE 已加载，可搜索")
+
+
+def browse():
+    p = filedialog.askopenfilename(filetypes=[("SCNE Files", "*.scne")])
+    if p:
+        entry.delete(0, tk.END)
+        entry.insert(0, p)
+        reload_tree()
+
+
+# =========================
+# UI
+# =========================
+
 root = tk.Tk()
-root.title("SCNE文件处理器 V1.0")
+root.title("SCNE 枚举工具 V7.0（顺序 + 克隆 + 批量）")
+root.geometry("1150x680")
 
-# 创建输入框和按钮
-label = tk.Label(root, text="选择 SCNE 文件:")
-label.pack(pady=10)
+top = tk.Frame(root)
+top.pack(fill=tk.X, padx=10, pady=6)
 
-entry = tk.Entry(root, width=50)
-entry.pack(padx=10)
+tk.Label(top, text="SCNE 文件：").pack(side=tk.LEFT)
+entry = tk.Entry(top, width=60)
+entry.pack(side=tk.LEFT, padx=5)
 
-button_browse = tk.Button(root, text="浏览", command=lambda: entry.delete(0, tk.END) or entry.insert(0, filedialog.askopenfilename(filetypes=[("SCNE Files", "*.scne")])))
-button_browse.pack(pady=5)
+tk.Button(top, text="浏览", command=browse).pack(side=tk.LEFT)
 
-button_process = tk.Button(root, text="处理文件", command=process_file)
-button_process.pack(pady=20)
+tk.Label(top, text="枚举数量：").pack(side=tk.LEFT, padx=10)
+enum_count = tk.Entry(top, width=5)
+enum_count.insert(0, "1")
+enum_count.pack(side=tk.LEFT)
 
-# 添加进度条和文件数量标签
-progress = ttk.Progressbar(root, orient="horizontal", length=400, mode="determinate")
-progress.pack(pady=10)
+tk.Button(top, text="生成并写入", command=generate_and_add).pack(side=tk.LEFT, padx=10)
+tk.Button(top, text="回撤", command=undo).pack(side=tk.LEFT)
 
-copied_count_label = tk.Label(root, text="已复制文件: 0/0")
-copied_count_label.pack(pady=5)
+main = tk.PanedWindow(root, orient=tk.HORIZONTAL)
+main.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-# 启动主循环
+tree_frame = tk.Frame(main)
+
+# ===== 搜索栏 =====
+search_bar = tk.Frame(tree_frame)
+search_bar.pack(fill=tk.X, pady=(0, 4))
+
+search_entry = tk.Entry(search_bar)
+search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+search_entry.bind(
+    "<KeyRelease>",
+    lambda e: search_tree_realtime(search_entry.get())
+)
+
+search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
+
+tk.Button(search_bar, text="搜索", command=lambda: search_tree_realtime(search_entry.get()))\
+    .pack(side=tk.LEFT)
+
+# ===== Tree =====
+tree = ttk.Treeview(tree_frame)
+tree.tag_configure("new", foreground="green")
+tree.pack(fill=tk.BOTH, expand=True)
+
+main.add(tree_frame)
+
+# ===== Tooltip（必须在 tree 创建之后）=====
+tooltip = tk.Label(
+    root,
+    text="",
+    bg="#ffffe0",
+    relief=tk.SOLID,
+    borderwidth=1,
+    font=("Arial", 9)
+)
+tooltip.place_forget()
+
+def on_tree_motion(event):
+    item = tree.identify_row(event.y)
+    if not item:
+        tooltip.place_forget()
+        return
+
+    path = get_tree_path(item)
+    tooltip.config(text=path)
+    tooltip.place(x=event.x_root + 10, y=event.y_root + 10)
+
+tree.bind("<Motion>", on_tree_motion)
+tree.bind("<Leave>", lambda e: tooltip.place_forget())
+
+detail_frame = tk.Frame(main)
+tk.Label(detail_frame, text="操作详情", font=("Arial", 10, "bold")).pack(anchor="w")
+detail = tk.Text(detail_frame, width=42)
+detail.pack(fill=tk.BOTH, expand=True)
+main.add(detail_frame)
+
+status = tk.StringVar(value="就绪")
+tk.Label(root, textvariable=status, relief=tk.SUNKEN, anchor="w").pack(fill=tk.X, side=tk.BOTTOM)
+
 root.mainloop()
