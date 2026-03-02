@@ -47,6 +47,8 @@ This repository includes `build_windows_exe.bat` for one-click packaging with Py
 build_windows_exe.bat
 ```
 
+This script installs `requirements-build-windows.txt` and outputs one-file EXE.
+
 After building, executable path is:
 
 ```text

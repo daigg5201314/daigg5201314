@@ -10,8 +10,7 @@ if not exist venv (
 
 call venv\Scripts\activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
-pip install pyinstaller
+pip install -r requirements-build-windows.txt
 
 REM Clear old build outputs
 if exist build rmdir /s /q build

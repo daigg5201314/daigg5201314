@@ -4,7 +4,8 @@ import webbrowser
 from pathlib import Path
 
 import gradio as gr
-import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
 
 
 class ColorizeService:
@@ -19,6 +20,19 @@ class ColorizeService:
         if key not in self._cache:
             self._cache[key] = MangaColorizator(device, generator_path, extractor_path)
         return self._cache[key]
+
+
+def save_result_png(result: np.ndarray) -> str:
+    result = np.asarray(result)
+    if result.dtype != np.uint8:
+        result = np.clip(result, 0, 1)
+        result = (result * 255).astype(np.uint8)
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        output_path = Path(tmp.name)
+
+    Image.fromarray(result).save(output_path)
+    return str(output_path)
 
 
 service = ColorizeService()
@@ -36,7 +50,13 @@ def colorize_image(
     if image is None:
         raise gr.Error("请先上传一张图片。")
 
-    device = "cuda" if use_gpu else "cpu"
+    device = "cpu"
+    if use_gpu:
+        import torch
+
+        if not torch.cuda.is_available():
+            raise gr.Error("当前环境未检测到可用 CUDA GPU，请关闭 GPU 选项或检查驱动。")
+        device = "cuda"
 
     try:
         colorizator = service.get_colorizator(device, generator_path, extractor_path)
@@ -47,11 +67,8 @@ def colorize_image(
     except Exception as exc:
         raise gr.Error(f"处理失败：{exc}")
 
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        output_path = Path(tmp.name)
-
-    plt.imsave(output_path, result)
-    return result, str(output_path)
+    output_path = save_result_png(result)
+    return result, output_path
 
 
 with gr.Blocks(title="Manga Colorization UI") as demo:
